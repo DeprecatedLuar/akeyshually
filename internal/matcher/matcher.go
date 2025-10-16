@@ -24,20 +24,18 @@ func New(shortcuts map[string]string) *Matcher {
 	}
 }
 
-func (m *Matcher) HandleKeyEvent(code uint16, value int32) (string, bool, ModifierState) {
+func (m *Matcher) HandleKeyEvent(code uint16, value int32) (string, bool) {
 	if value == 1 {
 		m.updateModifierState(code, true)
-		// fmt.Fprintf(os.Stderr, "[DEBUG] Key pressed: code=%d, state: super=%v ctrl=%v alt=%v shift=%v\n",
-		// 	code, m.state.Super, m.state.Ctrl, m.state.Alt, m.state.Shift)
 		command, matched := m.checkShortcut(code)
 		if matched {
-			return command, true, m.state
+			return command, true
 		}
-		return "", false, ModifierState{}
+		return "", false
 	} else if value == 0 {
 		m.updateModifierState(code, false)
 	}
-	return "", false, ModifierState{}
+	return "", false
 }
 
 func (m *Matcher) updateModifierState(code uint16, pressed bool) {
@@ -75,20 +73,6 @@ func IsModifierKey(code uint16) bool {
 		evdev.KEY_LEFTALT, evdev.KEY_RIGHTALT,
 		evdev.KEY_LEFTSHIFT, evdev.KEY_RIGHTSHIFT:
 		return true
-	}
-	return false
-}
-
-func (m *ModifierState) ShouldSuppressModifier(code uint16) bool {
-	switch code {
-	case evdev.KEY_LEFTMETA, evdev.KEY_RIGHTMETA:
-		return m.Super
-	case evdev.KEY_LEFTCTRL, evdev.KEY_RIGHTCTRL:
-		return m.Ctrl
-	case evdev.KEY_LEFTALT, evdev.KEY_RIGHTALT:
-		return m.Alt
-	case evdev.KEY_LEFTSHIFT, evdev.KEY_RIGHTSHIFT:
-		return m.Shift
 	}
 	return false
 }

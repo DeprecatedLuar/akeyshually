@@ -6,10 +6,6 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
-	"time"
-	
-
-	evdev "github.com/holoplot/go-evdev"
 
 	"github.com/deprecatedluar/akeyshually/internal/config"
 	"github.com/deprecatedluar/akeyshually/internal/executor"
@@ -18,42 +14,12 @@ import (
 )
 
 func createPressHandler(m *matcher.Matcher, cfg *config.Config, p listener.KeyboardPair) listener.KeyHandler {
-	var suppressModifiers matcher.ModifierState
-	delay := cfg.GetModifierReleaseDelay()
-
 	return func(code uint16, value int32) bool {
-		command, matched, modState := m.HandleKeyEvent(code, value)
+		command, matched := m.HandleKeyEvent(code, value)
 
 		if matched {
 			resolvedCmd := cfg.ResolveCommand(command)
 			executor.Execute(resolvedCmd)
-			suppressModifiers = modState
-
-			return true
-		}
-
-		// Check if this is a release event for a suppressed modifier
-		if value == 0 && suppressModifiers.ShouldSuppressModifier(code) {
-			switch code {
-			case evdev.KEY_LEFTMETA, evdev.KEY_RIGHTMETA:
-				suppressModifiers.Super = false
-			case evdev.KEY_LEFTCTRL, evdev.KEY_RIGHTCTRL:
-				suppressModifiers.Ctrl = false
-			case evdev.KEY_LEFTALT, evdev.KEY_RIGHTALT:
-				suppressModifiers.Alt = false
-			case evdev.KEY_LEFTSHIFT, evdev.KEY_RIGHTSHIFT:
-				suppressModifiers.Shift = false
-				}
-
-				// Inject synthetic release for the physically released modifier after a delay
-				go func(keyCode uint16) {
-					time.Sleep(time.Duration(delay) * time.Millisecond)
-					p.Virtual.WriteOne(&evdev.InputEvent{
-						Type:  evdev.EV_KEY,
-						Code:  evdev.EvCode(keyCode),
-						Value: 0,
-					})
-				}(code)
 			return true
 		}
 
@@ -63,16 +29,11 @@ func createPressHandler(m *matcher.Matcher, cfg *config.Config, p listener.Keybo
 
 func createReleaseHandler(m *matcher.Matcher, cfg *config.Config, p listener.KeyboardPair) listener.KeyHandler {
 	var bufferedKey uint16
-	
-	
 
 	return func(code uint16, value int32) bool {
 		// Update modifier state
 		if matcher.IsModifierKey(code) {
 			m.UpdateModifierState(code, value == 1)
-
-			
-
 			return false // Forward modifiers normally
 		}
 
@@ -94,8 +55,6 @@ func createReleaseHandler(m *matcher.Matcher, cfg *config.Config, p listener.Key
 				if command, matched := m.WouldMatch(code); matched {
 					resolvedCmd := cfg.ResolveCommand(command)
 					executor.Execute(resolvedCmd)
-
-					
 				}
 
 				bufferedKey = 0
