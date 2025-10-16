@@ -9,9 +9,14 @@ import (
 	evdev "github.com/holoplot/go-evdev"
 )
 
-type KeyHandler func(code uint16, value int32)
+type KeyboardPair struct {
+	Physical *evdev.InputDevice
+	Virtual  *evdev.InputDevice
+}
 
-func FindKeyboards() ([]*evdev.InputDevice, error) {
+type KeyHandler func(code uint16, value int32) bool
+
+func FindKeyboards() ([]KeyboardPair, error) {
 	paths, err := evdev.ListDevicePaths()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list input devices: %w", err)
@@ -29,6 +34,12 @@ func FindKeyboards() ([]*evdev.InputDevice, error) {
 		}
 
 		name, _ := dev.Name()
+
+		// Skip our own virtual keyboards
+		if strings.Contains(strings.ToLower(name), "akeyshually") {
+			dev.Close()
+			continue
+		}
 
 		// Check remappers first (they don't always have EV_REP)
 		if isRemapperVirtual(dev) {
@@ -52,18 +63,51 @@ func FindKeyboards() ([]*evdev.InputDevice, error) {
 	}
 
 	// Prefer remapper virtual keyboards (keyd/kanata grab physical ones)
+	var devicesToGrab []*evdev.InputDevice
 	if len(remappers) > 0 {
 		for _, dev := range keyboards {
 			dev.Close()
 		}
-		return remappers, nil
+		devicesToGrab = remappers
+	} else {
+		if len(keyboards) == 0 {
+			return nil, fmt.Errorf("no keyboards detected")
+		}
+		devicesToGrab = keyboards
 	}
 
-	if len(keyboards) == 0 {
-		return nil, fmt.Errorf("no keyboards detected")
+	// Grab and clone each keyboard
+	var pairs []KeyboardPair
+	for _, physical := range devicesToGrab {
+		name, _ := physical.Name()
+
+		// Grab for exclusive access
+		if err := physical.Grab(); err != nil {
+			fmt.Fprintf(os.Stderr, "[WARN] Failed to grab %s: %v\n", name, err)
+			physical.Close()
+			continue
+		}
+
+		// Clone to create virtual keyboard
+		virtual, err := evdev.CloneDevice(name+" (akeyshually)", physical)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[WARN] Failed to clone %s: %v\n", name, err)
+			physical.Ungrab()
+			physical.Close()
+			continue
+		}
+
+		pairs = append(pairs, KeyboardPair{
+			Physical: physical,
+			Virtual:  virtual,
+		})
 	}
 
-	return keyboards, nil
+	if len(pairs) == 0 {
+		return nil, fmt.Errorf("no keyboards could be grabbed and cloned")
+	}
+
+	return pairs, nil
 }
 
 func isKeyboard(dev *evdev.InputDevice) bool {
@@ -124,9 +168,9 @@ func hasAlphabetKeys(dev *evdev.InputDevice) bool {
 	return true
 }
 
-func Listen(dev *evdev.InputDevice, handler KeyHandler) error {
+func Listen(pair KeyboardPair, handler KeyHandler) error {
 	for {
-		event, err := dev.ReadOne()
+		event, err := pair.Physical.ReadOne()
 		if err != nil {
 			if err == syscall.ENODEV {
 				return fmt.Errorf("device disconnected")
@@ -141,7 +185,19 @@ func Listen(dev *evdev.InputDevice, handler KeyHandler) error {
 		}
 
 		if event.Type == evdev.EV_KEY {
-			handler(uint16(event.Code), event.Value)
+			matched := handler(uint16(event.Code), event.Value)
+			if !matched {
+				pair.Virtual.WriteOne(event)
+			}
+		} else {
+			// Forward all non-key events immediately
+			pair.Virtual.WriteOne(event)
 		}
 	}
+}
+
+func Cleanup(pair KeyboardPair) {
+	pair.Physical.Ungrab()
+	evdev.DestroyDevice(pair.Virtual)
+	pair.Physical.Close()
 }
