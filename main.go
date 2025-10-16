@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 	
 
 	evdev "github.com/holoplot/go-evdev"
@@ -18,6 +19,7 @@ import (
 
 func createPressHandler(m *matcher.Matcher, cfg *config.Config, p listener.KeyboardPair) listener.KeyHandler {
 	var suppressModifiers matcher.ModifierState
+	delay := cfg.GetModifierReleaseDelay()
 
 	return func(code uint16, value int32) bool {
 		command, matched, modState := m.HandleKeyEvent(code, value)
@@ -26,8 +28,6 @@ func createPressHandler(m *matcher.Matcher, cfg *config.Config, p listener.Keybo
 			resolvedCmd := cfg.ResolveCommand(command)
 			executor.Execute(resolvedCmd)
 			suppressModifiers = modState
-
-			// Modifiers are not released automatically anymore
 
 			return true
 		}
@@ -43,7 +43,17 @@ func createPressHandler(m *matcher.Matcher, cfg *config.Config, p listener.Keybo
 				suppressModifiers.Alt = false
 			case evdev.KEY_LEFTSHIFT, evdev.KEY_RIGHTSHIFT:
 				suppressModifiers.Shift = false
-			}
+				}
+
+				// Inject synthetic release for the physically released modifier after a delay
+				go func(keyCode uint16) {
+					time.Sleep(time.Duration(delay) * time.Millisecond)
+					p.Virtual.WriteOne(&evdev.InputEvent{
+						Type:  evdev.EV_KEY,
+						Code:  evdev.EvCode(keyCode),
+						Value: 0,
+					})
+				}(code)
 			return true
 		}
 

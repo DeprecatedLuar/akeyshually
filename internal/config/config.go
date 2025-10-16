@@ -11,6 +11,7 @@ import (
 type Settings struct {
 	EnableMediaKeys       bool   `toml:"enable_media_keys"`
 	TriggerOn             string `toml:"trigger_on"`               // "press" or "release"
+	ModifierReleaseDelay  int    `toml:"modifier_release_delay"`   // milliseconds
 	
 }
 
@@ -98,7 +99,13 @@ func (c *Config) GetTriggerMode() string {
 	return mode
 }
 
-
+func (c *Config) GetModifierReleaseDelay() int {
+	delay := c.Settings.ModifierReleaseDelay
+	if delay < 0 {
+		return 0
+	}
+	return delay
+}
 
 func getConfigDir() (string, error) {
 	home, err := os.UserHomeDir()
