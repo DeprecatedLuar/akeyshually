@@ -8,7 +8,8 @@ import (
 )
 
 func Execute(command string) {
-	cmd := exec.Command("sh", "-c", command)
+	fullCommand := "cd && " + command
+	cmd := exec.Command("sh", "-c", fullCommand)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 
 	if err := cmd.Start(); err != nil {

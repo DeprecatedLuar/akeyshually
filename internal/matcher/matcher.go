@@ -24,16 +24,20 @@ func New(shortcuts map[string]string) *Matcher {
 	}
 }
 
-func (m *Matcher) HandleKeyEvent(code uint16, value int32) (string, bool) {
+func (m *Matcher) HandleKeyEvent(code uint16, value int32) (string, bool, ModifierState) {
 	if value == 1 {
 		m.updateModifierState(code, true)
 		// fmt.Fprintf(os.Stderr, "[DEBUG] Key pressed: code=%d, state: super=%v ctrl=%v alt=%v shift=%v\n",
 		// 	code, m.state.Super, m.state.Ctrl, m.state.Alt, m.state.Shift)
-		return m.checkShortcut(code)
+		command, matched := m.checkShortcut(code)
+		if matched {
+			return command, true, m.state
+		}
+		return "", false, ModifierState{}
 	} else if value == 0 {
 		m.updateModifierState(code, false)
 	}
-	return "", false
+	return "", false, ModifierState{}
 }
 
 func (m *Matcher) updateModifierState(code uint16, pressed bool) {
@@ -47,6 +51,46 @@ func (m *Matcher) updateModifierState(code uint16, pressed bool) {
 	case evdev.KEY_LEFTSHIFT, evdev.KEY_RIGHTSHIFT:
 		m.state.Shift = pressed
 	}
+}
+
+// UpdateModifierState updates the modifier state (exported for external state tracking)
+func (m *Matcher) UpdateModifierState(code uint16, pressed bool) {
+	m.updateModifierState(code, pressed)
+}
+
+// WouldMatch checks if a key code with current modifiers would match a shortcut
+func (m *Matcher) WouldMatch(code uint16) (string, bool) {
+	return m.checkShortcut(code)
+}
+
+// GetCurrentModifiers returns a copy of current modifier state
+func (m *Matcher) GetCurrentModifiers() ModifierState {
+	return m.state
+}
+
+func IsModifierKey(code uint16) bool {
+	switch code {
+	case evdev.KEY_LEFTMETA, evdev.KEY_RIGHTMETA,
+		evdev.KEY_LEFTCTRL, evdev.KEY_RIGHTCTRL,
+		evdev.KEY_LEFTALT, evdev.KEY_RIGHTALT,
+		evdev.KEY_LEFTSHIFT, evdev.KEY_RIGHTSHIFT:
+		return true
+	}
+	return false
+}
+
+func (m *ModifierState) ShouldSuppressModifier(code uint16) bool {
+	switch code {
+	case evdev.KEY_LEFTMETA, evdev.KEY_RIGHTMETA:
+		return m.Super
+	case evdev.KEY_LEFTCTRL, evdev.KEY_RIGHTCTRL:
+		return m.Ctrl
+	case evdev.KEY_LEFTALT, evdev.KEY_RIGHTALT:
+		return m.Alt
+	case evdev.KEY_LEFTSHIFT, evdev.KEY_RIGHTSHIFT:
+		return m.Shift
+	}
+	return false
 }
 
 func (m *Matcher) checkShortcut(code uint16) (string, bool) {

@@ -6,12 +6,96 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	
+
+	evdev "github.com/holoplot/go-evdev"
 
 	"github.com/deprecatedluar/akeyshually/internal/config"
 	"github.com/deprecatedluar/akeyshually/internal/executor"
 	"github.com/deprecatedluar/akeyshually/internal/listener"
 	"github.com/deprecatedluar/akeyshually/internal/matcher"
 )
+
+func createPressHandler(m *matcher.Matcher, cfg *config.Config, p listener.KeyboardPair) listener.KeyHandler {
+	var suppressModifiers matcher.ModifierState
+
+	return func(code uint16, value int32) bool {
+		command, matched, modState := m.HandleKeyEvent(code, value)
+
+		if matched {
+			resolvedCmd := cfg.ResolveCommand(command)
+			executor.Execute(resolvedCmd)
+			suppressModifiers = modState
+
+			// Modifiers are not released automatically anymore
+
+			return true
+		}
+
+		// Check if this is a release event for a suppressed modifier
+		if value == 0 && suppressModifiers.ShouldSuppressModifier(code) {
+			switch code {
+			case evdev.KEY_LEFTMETA, evdev.KEY_RIGHTMETA:
+				suppressModifiers.Super = false
+			case evdev.KEY_LEFTCTRL, evdev.KEY_RIGHTCTRL:
+				suppressModifiers.Ctrl = false
+			case evdev.KEY_LEFTALT, evdev.KEY_RIGHTALT:
+				suppressModifiers.Alt = false
+			case evdev.KEY_LEFTSHIFT, evdev.KEY_RIGHTSHIFT:
+				suppressModifiers.Shift = false
+			}
+			return true
+		}
+
+		return false
+	}
+}
+
+func createReleaseHandler(m *matcher.Matcher, cfg *config.Config, p listener.KeyboardPair) listener.KeyHandler {
+	var bufferedKey uint16
+	
+	
+
+	return func(code uint16, value int32) bool {
+		// Update modifier state
+		if matcher.IsModifierKey(code) {
+			m.UpdateModifierState(code, value == 1)
+
+			
+
+			return false // Forward modifiers normally
+		}
+
+		// Key press
+		if value == 1 {
+			// Check if this would match a shortcut
+			if _, matched := m.WouldMatch(code); matched {
+				bufferedKey = code
+				return true // Buffer it, don't forward
+			}
+			return false // Not a match, forward normally
+		}
+
+		// Key release
+		if value == 0 {
+			// Check if this is the release of a buffered key
+			if code == bufferedKey && bufferedKey != 0 {
+				// Execute the shortcut
+				if command, matched := m.WouldMatch(code); matched {
+					resolvedCmd := cfg.ResolveCommand(command)
+					executor.Execute(resolvedCmd)
+
+					
+				}
+
+				bufferedKey = 0
+				return true // Suppress the release of the buffered key
+			}
+		}
+
+		return false
+	}
+}
 
 func main() {
 	cfg, err := config.Load()
@@ -33,6 +117,7 @@ func main() {
 	}
 
 	m := matcher.New(cfg.Shortcuts)
+	triggerMode := cfg.GetTriggerMode()
 
 	// Signal handling for cleanup
 	sigChan := make(chan os.Signal, 1)
@@ -44,13 +129,12 @@ func main() {
 		go func(p listener.KeyboardPair) {
 			defer wg.Done()
 
-			handler := func(code uint16, value int32) bool {
-				if command, matched := m.HandleKeyEvent(code, value); matched {
-					resolvedCmd := cfg.ResolveCommand(command)
-					executor.Execute(resolvedCmd)
-					return true
-				}
-				return false
+			var handler listener.KeyHandler
+
+			if triggerMode == "release" {
+				handler = createReleaseHandler(m, cfg, p)
+			} else {
+				handler = createPressHandler(m, cfg, p)
 			}
 
 			if err := listener.Listen(p, handler); err != nil {

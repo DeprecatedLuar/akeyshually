@@ -9,7 +9,9 @@ import (
 )
 
 type Settings struct {
-	EnableMediaKeys bool `toml:"enable_media_keys"`
+	EnableMediaKeys       bool   `toml:"enable_media_keys"`
+	TriggerOn             string `toml:"trigger_on"`               // "press" or "release"
+	
 }
 
 type Config struct {
@@ -83,6 +85,20 @@ func (c *Config) ResolveCommand(ref string) string {
 	}
 	return ref
 }
+
+func (c *Config) GetTriggerMode() string {
+	mode := c.Settings.TriggerOn
+	if mode == "" {
+		return "press" // Default
+	}
+	if mode != "press" && mode != "release" {
+		fmt.Fprintf(os.Stderr, "[WARN] Invalid trigger_on value '%s', using 'press'\n", mode)
+		return "press"
+	}
+	return mode
+}
+
+
 
 func getConfigDir() (string, error) {
 	home, err := os.UserHomeDir()
