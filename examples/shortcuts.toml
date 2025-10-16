@@ -1,0 +1,21 @@
+# hotkeyd configuration example
+# Location: ~/.config/hotkeyd/shortcuts.toml
+
+# Shortcuts section - define your key combinations and commands
+[shortcuts]
+"super+b" = "browser"
+"super+shift+b" = "browser_dan"
+"super+return" = "alacritty"
+"super+space" = "rofi -show drun"
+"super+shift+s" = "screenshot"
+"super+e" = "thunar"
+"super+x" = "xkill"
+"ctrl+alt+t" = "alacritty"
+"print" = "maim -s | xclip -selection clipboard -t image/png"
+
+# Commands section (optional) - define reusable commands
+# Shortcuts can reference these by name or use literal commands
+[commands]
+browser = "brave-browser --user-data-dir=/home/luar/.config/BraveSoftware/luar"
+browser_dan = "brave-browser --user-data-dir=/home/luar/.config/BraveSoftware/dan"
+screenshot = "maim -s /tmp/screenshot-$(date +%Y%m%d-%H%M%S).png"

@@ -1,0 +1,155 @@
+# akeyshually
+
+Portable keyboard daemon for Linux - bind keyboard shortcuts to shell commands.
+
+## Features
+
+- **Universal**: Works on X11, Wayland, any WM/DE
+- **Lightweight**: ~3MB binary, <5MB RAM
+- **Simple**: TOML config, fire-and-forget execution
+- **Portable**: Single static binary
+
+## Quick Start
+
+```bash
+# 1. Add user to input group (required for /dev/input/* access)
+sudo usermod -aG input $USER
+# Logout and login for group change to take effect
+
+# 2. Build
+go build -o akeyshually
+
+# 3. Install (optional)
+sudo cp akeyshually /usr/local/bin/
+
+# 4. Create config
+mkdir -p ~/.config/akeyshually
+cp examples/shortcuts.toml ~/.config/akeyshually/shortcuts.toml
+
+# 5. Edit config with your shortcuts
+nano ~/.config/akeyshually/shortcuts.toml
+
+# 6. Run
+akeyshually
+```
+
+## Configuration
+
+Config location: `~/.config/akeyshually/shortcuts.toml`
+
+### Basic Example
+
+```toml
+[shortcuts]
+"super+b" = "brave-browser"
+"super+return" = "alacritty"
+"ctrl+alt+t" = "alacritty"
+"print" = "maim -s | xclip -selection clipboard -t image/png"
+```
+
+### With Command References
+
+```toml
+[shortcuts]
+"super+b" = "browser"
+"super+shift+b" = "browser_private"
+
+[commands]
+browser = "brave-browser --user-data-dir=/home/user/.config/BraveSoftware/default"
+browser_private = "brave-browser --incognito"
+```
+
+### Key Names
+
+**Modifiers:** `super`, `ctrl`, `alt`, `shift`
+
+**Letters:** `a-z`
+
+**Numbers:** `0-9`
+
+**Special keys:** `return`/`enter`, `space`, `tab`, `esc`/`escape`, `backspace`, `print`/`printscreen`, `delete`, `insert`, `home`, `end`, `pageup`, `pagedown`
+
+**Arrows:** `left`, `right`, `up`, `down`
+
+**Function keys:** `f1`-`f12`
+
+## Systemd User Service
+
+Create `~/.config/systemd/user/akeyshually.service`:
+
+```ini
+[Unit]
+Description=Keyboard Shortcut Daemon
+
+[Service]
+ExecStart=/usr/local/bin/akeyshually
+Restart=on-failure
+
+[Install]
+WantedBy=default.target
+```
+
+Enable and start:
+
+```bash
+systemctl --user enable --now akeyshually
+```
+
+Check status:
+
+```bash
+systemctl --user status akeyshually
+```
+
+## Architecture
+
+```
+User presses key
+    ↓
+evdev (/dev/input/event*)
+    ↓
+Keyboard detection (EV_KEY + EV_REP capabilities)
+    ↓
+Event listener (goroutine per keyboard)
+    ↓
+Key matcher (track modifier state, match combo)
+    ↓
+Executor (sh -c "command", fire-and-forget)
+```
+
+## Permissions
+
+akeyshually requires read access to `/dev/input/event*` devices. Two options:
+
+1. **User in input group** (recommended for MVP):
+   ```bash
+   sudo usermod -aG input $USER
+   # Logout required
+   ```
+
+2. **Root service** (future enhancement):
+   - Run as systemd system service
+   - More complex but doesn't require logout
+
+## Troubleshooting
+
+**"Permission denied" error:**
+- Verify you're in the input group: `groups | grep input`
+- Remember to logout and login after adding to group
+
+**"No keyboards detected":**
+- Check devices: `ls -l /dev/input/by-id/*kbd*`
+- Verify evdev access: `cat /dev/input/event* | head -c 1`
+
+**Shortcut not triggering:**
+- Check config syntax (key names lowercase, `+` separated)
+- Verify command works: `sh -c "your-command"`
+- Check logs if running as systemd service
+
+## Development
+
+See `vision.md` for architecture decisions and implementation details.
+
+## License
+
+MIT
