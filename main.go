@@ -11,10 +11,53 @@ import (
 	"github.com/deprecatedluar/akeyshually/internal/executor"
 	"github.com/deprecatedluar/akeyshually/internal/listener"
 	"github.com/deprecatedluar/akeyshually/internal/matcher"
+	"github.com/deprecatedluar/akeyshually/internal/watcher"
 )
 
 func createPressHandler(m *matcher.Matcher, cfg *config.Config, p listener.KeyboardPair) listener.KeyHandler {
 	return func(code uint16, value int32) bool {
+		// Handle modifier keys for tap detection
+		if matcher.IsModifierKey(code) {
+			if value == 1 {
+				// Modifier pressed
+				m.UpdateModifierState(code, true)
+
+				// Check if pressed alone (no other modifiers held)
+				modifiers := m.GetCurrentModifiers()
+				isAlone := true
+				if isAlone {
+					// Check no other modifiers are held
+					if modifiers.Super {
+						isAlone = !modifiers.Ctrl && !modifiers.Alt && !modifiers.Shift
+					} else if modifiers.Ctrl {
+						isAlone = !modifiers.Super && !modifiers.Alt && !modifiers.Shift
+					} else if modifiers.Alt {
+						isAlone = !modifiers.Super && !modifiers.Ctrl && !modifiers.Shift
+					} else if modifiers.Shift {
+						isAlone = !modifiers.Super && !modifiers.Ctrl && !modifiers.Alt
+					}
+				}
+
+				if isAlone {
+					m.MarkTapCandidate(code)
+				}
+			} else if value == 0 {
+				// Modifier released - check for tap
+				if command, matched := m.CheckTap(code); matched {
+					resolvedCmd := cfg.ResolveCommand(command)
+					executor.Execute(resolvedCmd)
+				}
+				m.UpdateModifierState(code, false)
+			}
+			return false // Forward modifiers normally
+		}
+
+		// Regular key handling
+		if value == 1 {
+			// Any non-modifier key press clears tap candidate
+			m.ClearTapCandidate()
+		}
+
 		command, matched := m.HandleKeyEvent(code, value)
 
 		if matched {
@@ -69,7 +112,7 @@ func createReleaseHandler(m *matcher.Matcher, cfg *config.Config, p listener.Key
 
 		// Key press
 		if value == 1 {
-			// Any non-modifier key pressed clears tap candidate
+			// Any non-modifier key press clears tap candidate (regardless of match)
 			m.ClearTapCandidate()
 
 			// Check if this would match a shortcut
@@ -120,6 +163,18 @@ func main() {
 
 	m := matcher.New(cfg.Shortcuts)
 	triggerMode := cfg.GetTriggerMode()
+
+	// Start config file watcher for automatic reload
+	configDir, err := config.GetConfigDir()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to get config directory: %v\n", err)
+		os.Exit(1)
+	}
+	go func() {
+		if err := watcher.Watch(configDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Watcher error: %v\n", err)
+		}
+	}()
 
 	// Signal handling for cleanup
 	sigChan := make(chan os.Signal, 1)
