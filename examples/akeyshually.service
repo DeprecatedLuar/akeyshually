@@ -1,0 +1,18 @@
+[Unit]
+Description=akeyshually - Minimal keyboard shortcut daemon
+After=graphical-session.target
+# If using a keyboard remapper (keyd, kanata, kmonad, xremap), add it here:
+# After=graphical-session.target kanata.service
+
+[Service]
+Type=simple
+# Optional: Add delay if remapper needs time to create virtual keyboard
+# ExecStartPre=/bin/sleep 2
+ExecStart=%h/.local/bin/akeyshually
+Restart=on-failure
+RestartSec=3
+# Prevents systemd from killing spawned windows when service restarts
+KillMode=process
+
+[Install]
+WantedBy=default.target

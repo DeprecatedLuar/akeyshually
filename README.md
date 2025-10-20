@@ -59,6 +59,28 @@ browser = "brave-browser --user-data-dir=/home/user/.config/BraveSoftware/defaul
 browser_private = "brave-browser --incognito"
 ```
 
+### Modifier Tap Detection
+
+Single modifier key taps trigger actions when pressed and released without other keys. Requires `trigger_on = "release"` mode.
+
+**config.toml:**
+```toml
+[settings]
+trigger_on = "release"
+```
+
+**shortcuts.toml:**
+```toml
+[shortcuts]
+"super" = "rofi -show drun"      # Tap Super key alone → rofi
+"super+t" = "alacritty"          # Super+T combo still works
+```
+
+How it works:
+- Press Super alone → marked as tap candidate
+- Press Super+T → combo executes, tap cancelled
+- Release Super without other keys → tap action executes
+
 ### Key Names
 
 **Modifiers:** `super`, `ctrl`, `alt`, `shift`

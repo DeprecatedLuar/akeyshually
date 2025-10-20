@@ -52,15 +52,40 @@ type ParsedShortcut struct {
 }
 
 type Matcher struct {
-	state     ModifierState
-	shortcuts []ParsedShortcut
+	state        ModifierState
+	shortcuts    []ParsedShortcut
+	tapShortcuts map[uint16]string
+	tapCandidate uint16
 }
 
 func New(shortcuts map[string]string) *Matcher {
 	parsed := make([]ParsedShortcut, 0, len(shortcuts))
+	tapShortcuts := make(map[uint16]string)
 
 	for shortcut, command := range shortcuts {
-		parts := strings.Split(strings.ToLower(shortcut), "+")
+		normalized := strings.ToLower(shortcut)
+
+		// Check if this is a lone modifier (tap shortcut)
+		switch normalized {
+		case "super":
+			tapShortcuts[evdev.KEY_LEFTMETA] = command
+			tapShortcuts[evdev.KEY_RIGHTMETA] = command
+			continue
+		case "ctrl":
+			tapShortcuts[evdev.KEY_LEFTCTRL] = command
+			tapShortcuts[evdev.KEY_RIGHTCTRL] = command
+			continue
+		case "alt":
+			tapShortcuts[evdev.KEY_LEFTALT] = command
+			tapShortcuts[evdev.KEY_RIGHTALT] = command
+			continue
+		case "shift":
+			tapShortcuts[evdev.KEY_LEFTSHIFT] = command
+			tapShortcuts[evdev.KEY_RIGHTSHIFT] = command
+			continue
+		}
+
+		parts := strings.Split(normalized, "+")
 
 		state := ModifierState{}
 		var keyName string
@@ -91,7 +116,8 @@ func New(shortcuts map[string]string) *Matcher {
 	}
 
 	return &Matcher{
-		shortcuts: parsed,
+		shortcuts:    parsed,
+		tapShortcuts: tapShortcuts,
 	}
 }
 
@@ -135,6 +161,29 @@ func (m *Matcher) WouldMatch(code uint16) (string, bool) {
 // GetCurrentModifiers returns a copy of current modifier state
 func (m *Matcher) GetCurrentModifiers() ModifierState {
 	return m.state
+}
+
+// MarkTapCandidate sets the tap candidate if this modifier has a tap action
+func (m *Matcher) MarkTapCandidate(code uint16) {
+	if _, hasTap := m.tapShortcuts[code]; hasTap {
+		m.tapCandidate = code
+	}
+}
+
+// ClearTapCandidate clears the tap candidate (called when combo matches)
+func (m *Matcher) ClearTapCandidate() {
+	m.tapCandidate = 0
+}
+
+// CheckTap checks if this modifier release should trigger a tap action
+func (m *Matcher) CheckTap(code uint16) (string, bool) {
+	if m.tapCandidate == code {
+		if command, ok := m.tapShortcuts[code]; ok {
+			m.tapCandidate = 0
+			return command, true
+		}
+	}
+	return "", false
 }
 
 func IsModifierKey(code uint16) bool {

@@ -31,14 +31,47 @@ func createReleaseHandler(m *matcher.Matcher, cfg *config.Config, p listener.Key
 	var bufferedKey uint16
 
 	return func(code uint16, value int32) bool {
-		// Update modifier state
+		// Handle modifier keys
 		if matcher.IsModifierKey(code) {
-			m.UpdateModifierState(code, value == 1)
+			if value == 1 {
+				// Modifier pressed
+				m.UpdateModifierState(code, true)
+
+				// Check if pressed alone (no other modifiers held)
+				modifiers := m.GetCurrentModifiers()
+				isAlone := bufferedKey == 0
+				if isAlone {
+					// Check no other modifiers are held
+					if modifiers.Super {
+						isAlone = !modifiers.Ctrl && !modifiers.Alt && !modifiers.Shift
+					} else if modifiers.Ctrl {
+						isAlone = !modifiers.Super && !modifiers.Alt && !modifiers.Shift
+					} else if modifiers.Alt {
+						isAlone = !modifiers.Super && !modifiers.Ctrl && !modifiers.Shift
+					} else if modifiers.Shift {
+						isAlone = !modifiers.Super && !modifiers.Ctrl && !modifiers.Alt
+					}
+				}
+
+				if isAlone && bufferedKey == 0 {
+					m.MarkTapCandidate(code)
+				}
+			} else if value == 0 {
+				// Modifier released - check for tap
+				if command, matched := m.CheckTap(code); matched {
+					resolvedCmd := cfg.ResolveCommand(command)
+					executor.Execute(resolvedCmd)
+				}
+				m.UpdateModifierState(code, false)
+			}
 			return false // Forward modifiers normally
 		}
 
 		// Key press
 		if value == 1 {
+			// Any non-modifier key pressed clears tap candidate
+			m.ClearTapCandidate()
+
 			// Check if this would match a shortcut
 			if _, matched := m.WouldMatch(code); matched {
 				bufferedKey = code

@@ -1,12 +1,16 @@
-# hotkeyd configuration example
-# Location: ~/.config/hotkeyd/shortcuts.toml
+# akeyshually configuration example
+# Location: ~/.config/akeyshually/shortcuts.toml
 
 # Shortcuts section - define your key combinations and commands
 [shortcuts]
+# Modifier tap - single tap super key opens rofi (requires trigger_on = "release")
+"super" = "rofi -show drun"
+
+# Regular combos still work
 "super+b" = "browser"
 "super+shift+b" = "browser_dan"
 "super+return" = "alacritty"
-"super+space" = "rofi -show drun"
+"super+space" = "rofi -show run"
 "super+shift+s" = "screenshot"
 "super+e" = "thunar"
 "super+x" = "xkill"

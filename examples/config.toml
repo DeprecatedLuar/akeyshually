@@ -6,4 +6,8 @@
 # When false (default): System/DE handles media keys
 # When true: akeyshually handles media keys using media-keys.toml
 enable_media_keys = false
-modifier_release_delay = 50
+
+# Trigger mode: "press" (default) or "release"
+# "press": Execute immediately on key down
+# "release": Execute on key release (required for modifier tap detection)
+trigger_on = "release"
