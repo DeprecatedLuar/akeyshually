@@ -1,0 +1,30 @@
+# To install this service:
+#
+#   systemctl --user link ~/.config/akeyshually/akeyshually.service
+#   systemctl --user enable --now akeyshually
+#
+#   Also check the Unit section if you got a keyboard remmaper
+
+
+[Unit]
+Description=akeyshually - The nerdy shortcuts daemon
+After=graphical-session.target
+# If using a keyboard remapper, uncomment and replace with your service name:
+# After=graphical-session.target kanata.service
+# After=graphical-session.target kmonad.service
+# After=graphical-session.target xremap.service
+
+[Service]
+Type=simple
+# Optional: Add delay if remapper needs time to create virtual keyboard
+# ExecStartPre=/bin/sleep 2
+ExecStart=%h/.local/bin/akeyshually
+Restart=on-failure
+RestartSec=3
+# Prevents systemd from killing spawned windows when service restarts
+KillMode=process
+
+[Install]
+WantedBy=default.target
+
+# by Luar 

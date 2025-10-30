@@ -17,25 +17,30 @@ sudo usermod -aG input $USER
 # Logout and login for group change to take effect
 
 # 2. Build
-go build -o akeyshually
+go build -o akeyshually ./cmd
 
-# 3. Install (optional)
+# 3. Install binary (optional)
 sudo cp akeyshually /usr/local/bin/
 
-# 4. Create config
-mkdir -p ~/.config/akeyshually
-cp examples/shortcuts.toml ~/.config/akeyshually/shortcuts.toml
+# 4. Run once to generate config files
+akeyshually
+# Auto-creates ~/.config/akeyshually/ with default configs
 
-# 5. Edit config with your shortcuts
+# 5. Customize your shortcuts
 nano ~/.config/akeyshually/shortcuts.toml
 
-# 6. Run
-akeyshually
+# 6. Install systemd service (optional)
+systemctl --user link ~/.config/akeyshually/akeyshually.service
+systemctl --user enable --now akeyshually
 ```
 
 ## Configuration
 
-Config location: `~/.config/akeyshually/shortcuts.toml`
+Config files are auto-generated in `~/.config/akeyshually/` on first run:
+- `config.toml` - Settings (trigger mode, media keys)
+- `shortcuts.toml` - Keyboard shortcuts
+- `media-keys.toml` - Optional media key bindings
+- `akeyshually.service` - Systemd service file
 
 ### Basic Example
 
@@ -97,23 +102,14 @@ How it works:
 
 ## Systemd User Service
 
-Create `~/.config/systemd/user/akeyshually.service`:
+The service file is auto-generated at `~/.config/akeyshually/akeyshually.service` on first run.
 
-```ini
-[Unit]
-Description=Keyboard Shortcut Daemon
+**Before installing**, edit it to add keyboard remapper dependencies if needed (keyd, kanata, etc.).
 
-[Service]
-ExecStart=/usr/local/bin/akeyshually
-Restart=on-failure
-
-[Install]
-WantedBy=default.target
-```
-
-Enable and start:
+Install:
 
 ```bash
+systemctl --user link ~/.config/akeyshually/akeyshually.service
 systemctl --user enable --now akeyshually
 ```
 

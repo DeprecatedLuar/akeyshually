@@ -1,0 +1,37 @@
+# akeyshually shortcuts
+# Location: ~/.config/akeyshually/shortcuts.toml
+
+[shortcuts]
+# Modifier tap (requires trigger_on = "release")
+"super" = "rofi"
+
+# Applications
+"super+return" = "kitty"
+"super+b" = "browser"
+"super+shift+b" = "browser_private"
+"super+e" = "dolphin"
+"super+w" = "flatpak run com.rtosta.zapzap"
+"ctrl+alt+t" = "kitty"
+
+# Utilities
+"super+x" = "xkill"
+"super+v" = "copyq toggle"
+"super+k" = "kitty micro ~/.config/akeyshually/shortcuts.toml"
+
+# Screenshots
+"print" = "screenshot --quick"
+"shift+print" = "screenshot --save"
+"ctrl+print" = "xdg-open ~/Pictures/temp.png"
+
+# Custom scripts
+"f9" = "custom-tool toggle"
+"shift+super+n" = "bash -c \"source ~/.bashrc && notetaker\""
+
+[commands]
+# Shortcuts can reference these by name or use literal commands
+browser = "brave-browser --user-data-dir=~/.config/BraveSoftware/default"
+browser_private = "brave-browser --user-data-dir=~/.config/BraveSoftware/private --incognito"
+rofi = "~/.config/rofi/scripts/launcher_t7"
+screenshot = "maim -s | xclip -selection clipboard -t image/png"
+custom-tool = "~/bin/my-script"
+notetaker = "~/.local/bin/notetaker"

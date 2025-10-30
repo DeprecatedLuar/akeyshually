@@ -1,12 +1,16 @@
 package config
 
 import (
+	"embed"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/BurntSushi/toml"
 )
+
+//go:embed defaults/*
+var embeddedConfigs embed.FS
 
 type Settings struct {
 	EnableMediaKeys bool   `toml:"enable_media_keys"`
@@ -107,4 +111,31 @@ func GetConfigDir() (string, error) {
 
 func getConfigDir() (string, error) {
 	return GetConfigDir()
+}
+
+func EnsureConfigExists() error {
+	configDir, err := GetConfigDir()
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	files := []string{"config.toml", "shortcuts.toml", "media-keys.toml", "akeyshually.service"}
+	for _, filename := range files {
+		destPath := filepath.Join(configDir, filename)
+		if _, err := os.Stat(destPath); os.IsNotExist(err) {
+			data, err := embeddedConfigs.ReadFile("defaults/" + filename)
+			if err != nil {
+				return fmt.Errorf("failed to read embedded %s: %w", filename, err)
+			}
+			if err := os.WriteFile(destPath, data, 0644); err != nil {
+				return fmt.Errorf("failed to write %s: %w", filename, err)
+			}
+		}
+	}
+
+	return nil
 }

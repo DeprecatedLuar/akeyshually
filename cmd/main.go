@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 
@@ -14,7 +15,14 @@ import (
 	"github.com/deprecatedluar/akeyshually/internal/watcher"
 )
 
+func isLoggingEnabled() bool {
+	val := strings.ToLower(os.Getenv("LOGGING"))
+	return val == "1" || val == "true" || val == "yes"
+}
+
 func createPressHandler(m *matcher.Matcher, cfg *config.Config, p listener.KeyboardPair) listener.KeyHandler {
+	logging := isLoggingEnabled()
+
 	return func(code uint16, value int32) bool {
 		// Handle modifier keys for tap detection
 		if matcher.IsModifierKey(code) {
@@ -45,6 +53,9 @@ func createPressHandler(m *matcher.Matcher, cfg *config.Config, p listener.Keybo
 				// Modifier released - check for tap
 				if command, matched := m.CheckTap(code); matched {
 					resolvedCmd := cfg.ResolveCommand(command)
+					if logging {
+						fmt.Fprintf(os.Stderr, "[SHORTCUT] %s\n", resolvedCmd)
+					}
 					executor.Execute(resolvedCmd)
 				}
 				m.UpdateModifierState(code, false)
@@ -62,6 +73,9 @@ func createPressHandler(m *matcher.Matcher, cfg *config.Config, p listener.Keybo
 
 		if matched {
 			resolvedCmd := cfg.ResolveCommand(command)
+			if logging {
+				fmt.Fprintf(os.Stderr, "[SHORTCUT] %s\n", resolvedCmd)
+			}
 			executor.Execute(resolvedCmd)
 			return true
 		}
@@ -71,6 +85,7 @@ func createPressHandler(m *matcher.Matcher, cfg *config.Config, p listener.Keybo
 }
 
 func createReleaseHandler(m *matcher.Matcher, cfg *config.Config, p listener.KeyboardPair) listener.KeyHandler {
+	logging := isLoggingEnabled()
 	var bufferedKey uint16
 
 	return func(code uint16, value int32) bool {
@@ -103,6 +118,9 @@ func createReleaseHandler(m *matcher.Matcher, cfg *config.Config, p listener.Key
 				// Modifier released - check for tap
 				if command, matched := m.CheckTap(code); matched {
 					resolvedCmd := cfg.ResolveCommand(command)
+					if logging {
+						fmt.Fprintf(os.Stderr, "[SHORTCUT] %s\n", resolvedCmd)
+					}
 					executor.Execute(resolvedCmd)
 				}
 				m.UpdateModifierState(code, false)
@@ -130,6 +148,9 @@ func createReleaseHandler(m *matcher.Matcher, cfg *config.Config, p listener.Key
 				// Execute the shortcut
 				if command, matched := m.WouldMatch(code); matched {
 					resolvedCmd := cfg.ResolveCommand(command)
+					if logging {
+						fmt.Fprintf(os.Stderr, "[SHORTCUT] %s\n", resolvedCmd)
+					}
 					executor.Execute(resolvedCmd)
 				}
 
@@ -143,6 +164,11 @@ func createReleaseHandler(m *matcher.Matcher, cfg *config.Config, p listener.Key
 }
 
 func main() {
+	if err := config.EnsureConfigExists(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize config: %v\n", err)
+		os.Exit(1)
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Config error: %v\n", err)
