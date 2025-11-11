@@ -10,11 +10,8 @@ import (
 
 	evdev "github.com/holoplot/go-evdev"
 
+	"github.com/deprecatedluar/akeyshually/internal"
 	"github.com/deprecatedluar/akeyshually/internal/config"
-	"github.com/deprecatedluar/akeyshually/internal/executor"
-	"github.com/deprecatedluar/akeyshually/internal/listener"
-	"github.com/deprecatedluar/akeyshually/internal/matcher"
-	"github.com/deprecatedluar/akeyshually/internal/watcher"
 )
 
 func isLoggingEnabled() bool {
@@ -22,12 +19,12 @@ func isLoggingEnabled() bool {
 	return val == "1" || val == "true" || val == "yes"
 }
 
-func createPressHandler(m *matcher.Matcher, cfg *config.Config, p listener.KeyboardPair) listener.KeyHandler {
+func createPressHandler(m *internal.Matcher, cfg *config.Config, p internal.KeyboardPair) internal.KeyHandler {
 	logging := isLoggingEnabled()
 
 	return func(code uint16, value int32) bool {
 		// Handle modifier keys for tap detection
-		if matcher.IsModifierKey(code) {
+		if internal.IsModifierKey(code) {
 			if value == 1 {
 				// Modifier pressed
 				m.UpdateModifierState(code, true)
@@ -58,7 +55,7 @@ func createPressHandler(m *matcher.Matcher, cfg *config.Config, p listener.Keybo
 					if logging {
 						fmt.Fprintf(os.Stderr, "[SHORTCUT] %s\n", resolvedCmd)
 					}
-					executor.Execute(resolvedCmd)
+					internal.Execute(resolvedCmd, cfg)
 				}
 				m.UpdateModifierState(code, false)
 			}
@@ -78,7 +75,7 @@ func createPressHandler(m *matcher.Matcher, cfg *config.Config, p listener.Keybo
 			if logging {
 				fmt.Fprintf(os.Stderr, "[SHORTCUT] %s\n", resolvedCmd)
 			}
-			executor.Execute(resolvedCmd)
+			internal.Execute(resolvedCmd, cfg)
 			return true
 		}
 
@@ -86,13 +83,13 @@ func createPressHandler(m *matcher.Matcher, cfg *config.Config, p listener.Keybo
 	}
 }
 
-func createReleaseHandler(m *matcher.Matcher, cfg *config.Config, p listener.KeyboardPair) listener.KeyHandler {
+func createReleaseHandler(m *internal.Matcher, cfg *config.Config, p internal.KeyboardPair) internal.KeyHandler {
 	logging := isLoggingEnabled()
 	var bufferedKey uint16
 
 	return func(code uint16, value int32) bool {
 		// Handle modifier keys
-		if matcher.IsModifierKey(code) {
+		if internal.IsModifierKey(code) {
 			if value == 1 {
 				// Modifier pressed
 				m.UpdateModifierState(code, true)
@@ -123,7 +120,7 @@ func createReleaseHandler(m *matcher.Matcher, cfg *config.Config, p listener.Key
 					if logging {
 						fmt.Fprintf(os.Stderr, "[SHORTCUT] %s\n", resolvedCmd)
 					}
-					executor.Execute(resolvedCmd)
+					internal.Execute(resolvedCmd, cfg)
 				}
 				m.UpdateModifierState(code, false)
 			}
@@ -153,7 +150,7 @@ func createReleaseHandler(m *matcher.Matcher, cfg *config.Config, p listener.Key
 					if logging {
 						fmt.Fprintf(os.Stderr, "[SHORTCUT] %s\n", resolvedCmd)
 					}
-					executor.Execute(resolvedCmd)
+					internal.Execute(resolvedCmd, cfg)
 				}
 
 				bufferedKey = 0
@@ -177,7 +174,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	keyboardPairs, err := listener.FindKeyboards()
+	keyboardPairs, err := internal.FindKeyboards()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Keyboard detection error: %v\n", err)
 		os.Exit(1)
@@ -189,14 +186,14 @@ func main() {
 		fmt.Printf("  - %s\n", name)
 	}
 
-	m := matcher.New(cfg.Shortcuts)
+	m := internal.New(cfg.Shortcuts)
 	triggerMode := cfg.GetTriggerMode()
 
 	// Create shared tap state and detect mice (if tap shortcuts exist)
-	var tapState *matcher.TapState
-	mice, err := listener.FindMice()
+	var tapState *internal.TapState
+	mice, err := internal.FindMice()
 	if err == nil && len(mice) > 0 {
-		tapState = matcher.NewTapState()
+		tapState = internal.NewTapState()
 		m.SetTapState(tapState)
 		fmt.Printf("Monitoring %d mouse device(s) for tap cancellation\n", len(mice))
 	}
@@ -208,7 +205,7 @@ func main() {
 		os.Exit(1)
 	}
 	go func() {
-		if err := watcher.Watch(configDir); err != nil {
+		if err := internal.Watch(configDir); err != nil {
 			fmt.Fprintf(os.Stderr, "Watcher error: %v\n", err)
 		}
 	}()
@@ -222,10 +219,10 @@ func main() {
 	// Launch keyboard listeners
 	for _, pair := range keyboardPairs {
 		wg.Add(1)
-		go func(p listener.KeyboardPair) {
+		go func(p internal.KeyboardPair) {
 			defer wg.Done()
 
-			var handler listener.KeyHandler
+			var handler internal.KeyHandler
 
 			if triggerMode == "release" {
 				handler = createReleaseHandler(m, cfg, p)
@@ -233,7 +230,7 @@ func main() {
 				handler = createPressHandler(m, cfg, p)
 			}
 
-			if err := listener.Listen(p, handler); err != nil {
+			if err := internal.Listen(p, handler); err != nil {
 				fmt.Fprintf(os.Stderr, "Listener error: %v\n", err)
 			}
 		}(pair)
@@ -245,7 +242,7 @@ func main() {
 			wg.Add(1)
 			go func(dev evdev.InputDevice) {
 				defer wg.Done()
-				if err := listener.ListenMouse(&dev, func() {
+				if err := internal.ListenMouse(&dev, func() {
 					tapState.Clear()
 				}); err != nil {
 					fmt.Fprintf(os.Stderr, "Mouse listener error: %v\n", err)
@@ -259,7 +256,7 @@ func main() {
 		<-sigChan
 		fmt.Fprintf(os.Stderr, "\nShutting down...\n")
 		for _, pair := range keyboardPairs {
-			listener.Cleanup(pair)
+			internal.Cleanup(pair)
 		}
 		os.Exit(0)
 	}()

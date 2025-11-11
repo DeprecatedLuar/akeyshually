@@ -15,6 +15,8 @@ var embeddedConfigs embed.FS
 type Settings struct {
 	EnableMediaKeys bool   `toml:"enable_media_keys"`
 	TriggerOn       string `toml:"trigger_on"` // "press" or "release"
+	Shell           string `toml:"shell"`      // Optional: override $SHELL
+	EnvFile         string `toml:"env_file"`   // Optional: source before commands
 }
 
 type Config struct {

@@ -1,13 +1,5 @@
-# akeyshually settings
-# Location: ~/.config/akeyshually/config.toml
-
 [settings]
-# Trigger mode: "press" (default) or "release"
-# "press": Execute immediately on key down (faster, simpler)
-# "release": Execute on key release (enables modifier tap detection like "super" alone)
 trigger_on = "release"
-
-# Enable media key handling (volume, brightness, media controls)
-# When false (default): System/DE handles media keys natively
-# When true: akeyshually intercepts media keys using shortcuts in media-keys.toml
 enable_media_keys = false
+env_file = "~/.profile"
+#shell = "/bin/bash"
