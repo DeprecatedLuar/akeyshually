@@ -11,6 +11,7 @@ import (
 	evdev "github.com/holoplot/go-evdev"
 
 	"github.com/deprecatedluar/akeyshually/internal"
+	"github.com/deprecatedluar/akeyshually/internal/commands/handler"
 	"github.com/deprecatedluar/akeyshually/internal/config"
 )
 
@@ -163,6 +164,14 @@ func createReleaseHandler(m *internal.Matcher, cfg *config.Config, p internal.Ke
 }
 
 func main() {
+	// Parse CLI arguments and execute commands
+	// Returns true only for foreground mode
+	if handler.Parse(os.Args[1:]) {
+		startDaemon()
+	}
+}
+
+func startDaemon() {
 	if err := config.EnsureConfigExists(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize config: %v\n", err)
 		os.Exit(1)
@@ -258,6 +267,8 @@ func main() {
 		for _, pair := range keyboardPairs {
 			internal.Cleanup(pair)
 		}
+		// Clean up pidfile if running as daemon
+		internal.RemovePidFile()
 		os.Exit(0)
 	}()
 
