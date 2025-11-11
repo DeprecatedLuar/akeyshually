@@ -1,13 +1,20 @@
 # akeyshually
 
-Portable keyboard daemon for Linux - bind keyboard shortcuts to shell commands.
+Portable keyboard shortcut daemon for Linux - a **command launcher** that maps keyboard combos to shell commands.
+
+## What It Does
+
+akeyshually is a command launcher, not an action executor. It doesn't have built-in "actions" - it simply executes any shell command you assign to a keyboard shortcut. Want to mute your microphone with `ctrl+mute`? Map it to `pactl set-source-mute @DEFAULT_SOURCE@ toggle`. Want to launch a browser? Map `super+b` to `brave-browser`.
+
+**You provide the commands, akeyshually provides the keyboard shortcuts.**
 
 ## Features
 
-- **Universal**: Works on X11, Wayland, any WM/DE
+- **Universal**: Works on X11, Wayland, any WM/DE via evdev
 - **Lightweight**: ~3MB binary, <5MB RAM
-- **Simple**: TOML config, fire-and-forget execution
+- **Simple**: TOML config, fire-and-forget command execution
 - **Portable**: Single static binary
+- **Command-focused**: No built-in actions - compose with existing CLI tools
 
 ## Quick Start
 

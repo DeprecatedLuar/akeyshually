@@ -2,6 +2,7 @@ package matcher
 
 import (
 	"strings"
+	"sync"
 
 	evdev "github.com/holoplot/go-evdev"
 )
@@ -51,11 +52,43 @@ type ParsedShortcut struct {
 	Command string
 }
 
+// TapState is shared across all input devices (keyboards and mice)
+type TapState struct {
+	sync.RWMutex
+	candidate uint16 // Which modifier key is the tap candidate (0 = none)
+}
+
+// NewTapState creates a new shared tap state
+func NewTapState() *TapState {
+	return &TapState{}
+}
+
+// MarkCandidate sets the tap candidate
+func (ts *TapState) MarkCandidate(code uint16) {
+	ts.Lock()
+	ts.candidate = code
+	ts.Unlock()
+}
+
+// Clear clears the tap candidate
+func (ts *TapState) Clear() {
+	ts.Lock()
+	ts.candidate = 0
+	ts.Unlock()
+}
+
+// Check returns the current candidate and clears it
+func (ts *TapState) Check(code uint16) bool {
+	ts.RLock()
+	defer ts.RUnlock()
+	return ts.candidate == code
+}
+
 type Matcher struct {
 	state        ModifierState
 	shortcuts    []ParsedShortcut
 	tapShortcuts map[uint16]string
-	tapCandidate uint16
+	tapState     *TapState // Shared tap state (optional, can be nil)
 }
 
 func New(shortcuts map[string]string) *Matcher {
@@ -118,7 +151,13 @@ func New(shortcuts map[string]string) *Matcher {
 	return &Matcher{
 		shortcuts:    parsed,
 		tapShortcuts: tapShortcuts,
+		tapState:     nil, // Set via SetTapState() if needed
 	}
+}
+
+// SetTapState sets the shared tap state (call after New if tap shortcuts exist)
+func (m *Matcher) SetTapState(ts *TapState) {
+	m.tapState = ts
 }
 
 func (m *Matcher) HandleKeyEvent(code uint16, value int32) (string, bool) {
@@ -166,20 +205,24 @@ func (m *Matcher) GetCurrentModifiers() ModifierState {
 // MarkTapCandidate sets the tap candidate if this modifier has a tap action
 func (m *Matcher) MarkTapCandidate(code uint16) {
 	if _, hasTap := m.tapShortcuts[code]; hasTap {
-		m.tapCandidate = code
+		if m.tapState != nil {
+			m.tapState.MarkCandidate(code)
+		}
 	}
 }
 
 // ClearTapCandidate clears the tap candidate (called when combo matches)
 func (m *Matcher) ClearTapCandidate() {
-	m.tapCandidate = 0
+	if m.tapState != nil {
+		m.tapState.Clear()
+	}
 }
 
 // CheckTap checks if this modifier release should trigger a tap action
 func (m *Matcher) CheckTap(code uint16) (string, bool) {
-	if m.tapCandidate == code {
+	if m.tapState != nil && m.tapState.Check(code) {
 		if command, ok := m.tapShortcuts[code]; ok {
-			m.tapCandidate = 0
+			m.tapState.Clear()
 			return command, true
 		}
 	}

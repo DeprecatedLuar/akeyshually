@@ -201,3 +201,84 @@ func Cleanup(pair KeyboardPair) {
 	evdev.DestroyDevice(pair.Virtual)
 	pair.Physical.Close()
 }
+
+// FindMice detects mouse devices (read-only, no grabbing)
+func FindMice() ([]*evdev.InputDevice, error) {
+	paths, err := evdev.ListDevicePaths()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list input devices: %w", err)
+	}
+
+	var mice []*evdev.InputDevice
+
+	for _, path := range paths {
+		dev, err := evdev.Open(path.Path)
+		if err != nil {
+			continue
+		}
+
+		name, _ := dev.Name()
+
+		// Skip virtual keyboards we created
+		if strings.Contains(strings.ToLower(name), "akeyshually") {
+			dev.Close()
+			continue
+		}
+
+		// Mice have EV_KEY + mouse buttons but no EV_REP
+		if isMouse(dev) {
+			fmt.Fprintf(os.Stderr, "[DEBUG] Found mouse: %s\n", name)
+			mice = append(mice, dev)
+			continue
+		}
+
+		dev.Close()
+	}
+
+	return mice, nil
+}
+
+func isMouse(dev *evdev.InputDevice) bool {
+	if !hasKeyCapability(dev) {
+		return false
+	}
+
+	// Mice don't have EV_REP
+	if hasRepCapability(dev) {
+		return false
+	}
+
+	// Check for mouse buttons
+	capableKeys := dev.CapableEvents(evdev.EV_KEY)
+	if len(capableKeys) == 0 {
+		return false
+	}
+
+	keyMap := make(map[evdev.EvCode]bool)
+	for _, key := range capableKeys {
+		keyMap[key] = true
+	}
+
+	// Must have at least left mouse button
+	return keyMap[evdev.EvCode(evdev.BTN_LEFT)]
+}
+
+type MouseButtonHandler func()
+
+// ListenMouse monitors mouse button presses (read-only, no grabbing)
+func ListenMouse(dev *evdev.InputDevice, handler MouseButtonHandler) error {
+	for {
+		event, err := dev.ReadOne()
+		if err != nil {
+			if err == syscall.ENODEV {
+				return fmt.Errorf("device disconnected")
+			}
+			return fmt.Errorf("read error: %w", err)
+		}
+
+		// Trigger on any mouse button press (value == 1)
+		if event.Type == evdev.EV_KEY && event.Value == 1 {
+			handler()
+		}
+	}
+}

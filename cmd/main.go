@@ -8,6 +8,8 @@ import (
 	"sync"
 	"syscall"
 
+	evdev "github.com/holoplot/go-evdev"
+
 	"github.com/deprecatedluar/akeyshually/internal/config"
 	"github.com/deprecatedluar/akeyshually/internal/executor"
 	"github.com/deprecatedluar/akeyshually/internal/listener"
@@ -190,6 +192,15 @@ func main() {
 	m := matcher.New(cfg.Shortcuts)
 	triggerMode := cfg.GetTriggerMode()
 
+	// Create shared tap state and detect mice (if tap shortcuts exist)
+	var tapState *matcher.TapState
+	mice, err := listener.FindMice()
+	if err == nil && len(mice) > 0 {
+		tapState = matcher.NewTapState()
+		m.SetTapState(tapState)
+		fmt.Printf("Monitoring %d mouse device(s) for tap cancellation\n", len(mice))
+	}
+
 	// Start config file watcher for automatic reload
 	configDir, err := config.GetConfigDir()
 	if err != nil {
@@ -207,6 +218,8 @@ func main() {
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	var wg sync.WaitGroup
+
+	// Launch keyboard listeners
 	for _, pair := range keyboardPairs {
 		wg.Add(1)
 		go func(p listener.KeyboardPair) {
@@ -224,6 +237,21 @@ func main() {
 				fmt.Fprintf(os.Stderr, "Listener error: %v\n", err)
 			}
 		}(pair)
+	}
+
+	// Launch mouse listeners (if tapState is active)
+	if tapState != nil {
+		for _, mouse := range mice {
+			wg.Add(1)
+			go func(dev evdev.InputDevice) {
+				defer wg.Done()
+				if err := listener.ListenMouse(&dev, func() {
+					tapState.Clear()
+				}); err != nil {
+					fmt.Fprintf(os.Stderr, "Mouse listener error: %v\n", err)
+				}
+			}(*mouse)
+		}
 	}
 
 	// Wait for signal in separate goroutine

@@ -5,7 +5,7 @@
 
 set -e
 
-pushd "$(dirname "$0")/../.." > /dev/null
+pushd "$(dirname "$0")/.." > /dev/null
 
 echo "Building akeyshually..."
 go build -o akeyshually
