@@ -26,8 +26,17 @@ func Parse(args []string) bool {
 	case "restart":
 		commands.Restart()
 		os.Exit(0)
+	case "update":
+		commands.Update()
+		os.Exit(0)
+	case "config", "conf":
+		commands.Config()
+		os.Exit(0)
+	case "shortcuts":
+		commands.Shortcuts()
+		os.Exit(0)
 	case "help", "-h", "--help":
-		commands.Help()
+		commands.Help(args[1:]...)
 		os.Exit(0)
 	case "version", "-v", "--version":
 		commands.Version()

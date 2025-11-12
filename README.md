@@ -1,99 +1,166 @@
-# akeyshually
+<div align="center">
+  <img src="other/assets/erm.webp" alt="akeyshually banner" width="400">
+</div>
 
-Portable keyboard shortcut daemon for Linux - a **command launcher** that maps keyboard combos to shell commands.
+<p align="center">Errm... Akeyshually, this is an evdev-based userspace daemon configured in TOML that intercepts raw input events, performs stateful modifier tracking, and executes arbitrary shell commands through a fire-and-forget subprocess model</p>
 
-## What It Does
+<p align="center">
+  <a href="https://github.com/DeprecatedLuar/akeyshually/stargazers">
+    <img src="https://img.shields.io/github/stars/DeprecatedLuar/akeyshually?style=for-the-badge&logo=github&color=1f6feb&logoColor=white&labelColor=black"/>
+  </a>
+  <a href="https://github.com/DeprecatedLuar/akeyshually/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/DeprecatedLuar/akeyshually?style=for-the-badge&color=green&labelColor=black"/>
+  </a>
+</p>
 
-akeyshually is a command launcher, not an action executor. It doesn't have built-in "actions" - it simply executes any shell command you assign to a keyboard shortcut. Want to mute your microphone with `ctrl+mute`? Map it to `pactl set-source-mute @DEFAULT_SOURCE@ toggle`. Want to launch a browser? Map `super+b` to `brave-browser`.
 
-**You provide the commands, akeyshually provides the keyboard shortcuts.**
+---
 
-## Features
+Every shortcuts manager is coupled to your display server (X11 vs Wayland ), your window manager (sway vs Hyprland vs i3), and your current machine.
 
-- **Universal**: Works on X11, Wayland, any WM/DE via evdev
-- **Lightweight**: ~3MB binary, <5MB RAM
-- **Simple**: TOML config, fire-and-forget command execution
-- **Portable**: Single static binary
-- **Command-focused**: No built-in actions - compose with existing CLI tools
+I made akeyshually to not only have my configs in a single git tracked file, but to work anywhere I want.
 
-## Quick Start
+---
+
+## The cool features you've never seen before
+
+<img src="other/assets/ermactually.jpeg" alt="Actually..." align="right" width="200"/>
+
+- Works on X11, Wayland, literally any WM/DE via evdev
+- All settings declared on the TOML config
+- **Actually lightweight** takes about ~3MB binary, <3MB RAM, 0% CPU when idle
+- Configs are hot-reloaded on edit
+- Special modes like .whileheld or .onrelese and even .toggle
+- You can literally make an auto-clicker with a single line
+- Works alongside remappers (keyd, kanata, kmonad, xremap...)
+
+---
+
+## Installation
 
 ```bash
-# 1. Add user to input group (required for /dev/input/* access)
-sudo usermod -aG input $USER
-# Logout and login for group change to take effect
-
-# 2. Build
-go build -o akeyshually ./cmd
-
-# 3. Install binary (optional)
-sudo cp akeyshually /usr/local/bin/
-
-# 4. Run once to generate config files
-akeyshually
-# Auto-creates ~/.config/akeyshually/ with default configs
-
-# 5. Customize your shortcuts
-nano ~/.config/akeyshually/shortcuts.toml
-
-# 6. Install systemd service (optional)
-systemctl --user link ~/.config/akeyshually/akeyshually.service
-systemctl --user enable --now akeyshually
+curl -sSL https://raw.githubusercontent.com/DeprecatedLuar/akeyshually/main/install.sh | bash
 ```
+
+<details>
+<summary>Other Install Methods</summary>
+
+<br>
+
+**Manual Install**
+```bash
+# Build from source
+git clone https://github.com/DeprecatedLuar/akeyshually.git
+cd akeyshually
+go build -ldflags="-s -w" -o akeyshually ./cmd
+
+# Install to ~/.local/bin
+./other/install-local.sh
+
+# Or install system-wide
+sudo cp akeyshually /usr/local/bin/
+```
+
+**Prerequisites:**
+- Go 1.21+ (for building)
+- User must be in `input` group:
+  ```bash
+  sudo usermod -aG input $USER
+  # Logout and login for group change to take effect
+  ```
+
+</details>
+
+<br>
+
+First run auto-generates config files in `~/.config/akeyshually/`. Just run `akeyshually` and you're good.
+
+---
+
+<img src="other/assets/lovecowboy.webp" alt="Actually..." align="left" width="200"/>
+
+## Commands
+
+| Command | Description                                      |
+|---------|--------------------------------------------------|
+| start   | Daemonize in background                          |
+| stop    | Stop daemon (via pidfile or systemctl)           |
+| update  | Check for and install updates                    |
+| version | Show version                                     |
+| --help  | Show help                                        |
+
+> [!NOTE]
+> `akeyshually` with no args runs in foreground
+
+---
 
 ## Configuration
 
-Config files are auto-generated in `~/.config/akeyshually/` on first run:
-- `config.toml` - Settings (trigger mode, media keys)
-- `shortcuts.toml` - Keyboard shortcuts
+Config files live at `~/.config/akeyshually/`:
+- `config.toml` - Settings (trigger mode, media keys, shell)
+- `shortcuts.toml` - Your keyboard shortcuts
 - `media-keys.toml` - Optional media key bindings
 - `akeyshually.service` - Systemd service file
 
-### Basic Example
+<details>
+<summary>Default Configuration Example</summary>
+
+<br>
 
 ```toml
-[shortcuts]
-"super+b" = "brave-browser"
-"super+return" = "alacritty"
-"ctrl+alt+t" = "alacritty"
-"print" = "maim -s | xclip -selection clipboard -t image/png"
-```
 
-### With Command References
+[shortcuts] # ~/.config/akeyshually/shortcuts.toml
+"super+k" = "edit_config"
 
-```toml
-[shortcuts]
+#-[LAUNCHERS]--------------------------------
+
+"super" = "rofi"
 "super+b" = "browser"
-"super+shift+b" = "browser_private"
+"super+shift+b" = "browser2"
+"super+return" = "kitty"
+"super+f" = "dolphin"
+"super+x" = "xkill"
+"super+e" = "email"
+#"ctrl+alt+t" = "kitty"
+"super+v" = "copyq toggle"
+"super+w" = "whatsapp"
+"shift+super+n" = "notetaker"
 
-[commands]
-browser = "brave-browser --user-data-dir=/home/user/.config/BraveSoftware/default"
-browser_private = "brave-browser --incognito"
+#-[UTILS]------------------------------------
+
+"print" = "prtscr"
+"super+p" = "prtscr"
+"shift+print" = "/home/user/Workspace/tools/bin/screenshot-save"
+"ctrl+print" = "bash -c \"xdg-open ~/Media/Pictures/temp.png\""
+"f9" = "yap"
+"ctrl+mute" = "mute_mic"
+
+
+"ctrl+shift+alt+h"="xdotool mousemove_relative 2 0"
+
+
+
+[commands]#----------------------------------
+
+edit_config = "kitty micro ~/.config/akeyshually/shortcuts.toml"
+
+browser = "brave-browser --user-data-dir=/home/user/.config/BraveSoftware/1"
+browser2 = "brave-browser --user-data-dir=/home/user/.config/BraveSoftware/2"
+dmenu = "bash -c \"compgen -c | dmenu | sh\""
+rofi = "~/.config/rofi/scripts/launcher_t7"
+email = "flatpak run org.mozilla.Thunderbird"
+mute_mic = "pactl set-source-mute @DEFAULT_SOURCE@ toggle"
+whatsapp = "flatpak run com.rtosta.zapzap"
+notetaker = "bash -c \"source ~/.bashrc && /home/user/.config/bash/bin/notetaker/notetaker\""
+prtscr = "/home/user/Workspace/tools/bin/screenshot-save --temp"
 ```
 
-### Modifier Tap Detection
+</details>
 
-Single modifier key taps trigger actions when pressed and released without other keys. Requires `trigger_on = "release"` mode.
+<details>
+<summary>Available Key Names</summary>
 
-**config.toml:**
-```toml
-[settings]
-trigger_on = "release"
-```
-
-**shortcuts.toml:**
-```toml
-[shortcuts]
-"super" = "rofi -show drun"      # Tap Super key alone → rofi
-"super+t" = "alacritty"          # Super+T combo still works
-```
-
-How it works:
-- Press Super alone → marked as tap candidate
-- Press Super+T → combo executes, tap cancelled
-- Release Super without other keys → tap action executes
-
-### Key Names
+<br>
 
 **Modifiers:** `super`, `ctrl`, `alt`, `shift`
 
@@ -105,76 +172,53 @@ How it works:
 
 **Arrows:** `left`, `right`, `up`, `down`
 
-**Function keys:** `f1`-`f12`
+**Function keys:** `f1-f12`
 
-## Systemd User Service
+**Media keys:** Enabled via `enable_media_keys = true` in config.toml (see `media-keys.toml` for defaults)
 
-The service file is auto-generated at `~/.config/akeyshually/akeyshually.service` on first run.
+</details>
 
-**Before installing**, edit it to add keyboard remapper dependencies if needed (keyd, kanata, etc.).
+---
 
-Install:
+<details>
+<summary>Troubleshooting</summary>
 
-```bash
-systemctl --user link ~/.config/akeyshually/akeyshually.service
-systemctl --user enable --now akeyshually
-```
-
-Check status:
-
-```bash
-systemctl --user status akeyshually
-```
-
-## Architecture
-
-```
-User presses key
-    ↓
-evdev (/dev/input/event*)
-    ↓
-Keyboard detection (EV_KEY + EV_REP capabilities)
-    ↓
-Event listener (goroutine per keyboard)
-    ↓
-Key matcher (track modifier state, match combo)
-    ↓
-Executor (sh -c "command", fire-and-forget)
-```
-
-## Permissions
-
-akeyshually requires read access to `/dev/input/event*` devices. Two options:
-
-1. **User in input group** (recommended for MVP):
-   ```bash
-   sudo usermod -aG input $USER
-   # Logout required
-   ```
-
-2. **Root service** (future enhancement):
-   - Run as systemd system service
-   - More complex but doesn't require logout
-
-## Troubleshooting
+<br>
 
 **"Permission denied" error:**
-- Verify you're in the input group: `groups | grep input`
-- Remember to logout and login after adding to group
+```bash
+groups | grep input  # Verify you're in input group
+# If not there:
+sudo usermod -aG input $USER
+# Then logout and login
+```
 
 **"No keyboards detected":**
-- Check devices: `ls -l /dev/input/by-id/*kbd*`
-- Verify evdev access: `cat /dev/input/event* | head -c 1`
+```bash
+ls -l /dev/input/by-id/*kbd*  # Check devices exist
+cat /dev/input/event* | head -c 1  # Test evdev access
+```
 
 **Shortcut not triggering:**
-- Check config syntax (key names lowercase, `+` separated)
+- Keys must be lowercase in config (`super+t` not `Super+T`)
 - Verify command works: `sh -c "your-command"`
-- Check logs if running as systemd service
+- Check logs if running as systemd service: `journalctl --user -u akeyshually`
 
-## Development
+**Enable debug logging:**
+```bash
+LOGGING=1 akeyshually
+```
 
-See `vision.md` for architecture decisions and implementation details.
+</details>
 
-## License
+<div align="center">
+  <img src="other/assets/nerdmoji.jpeg" alt="akeyshually banner" width="400">
+</div>
 
-MIT
+---
+
+<p align="center">
+  <a href="https://github.com/DeprecatedLuar/akeyshually/issues">
+    <img src="https://img.shields.io/badge/Found%20a%20bug%3F-Report%20it!-red?style=for-the-badge&logo=github&logoColor=white&labelColor=black"/>
+  </a>
+</p>

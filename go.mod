@@ -10,6 +10,7 @@ require (
 )
 
 require (
+	github.com/DeprecatedLuar/the-satellite/the-lib v0.0.0-20251112110819-0c6893dc3dc4 // indirect
 	github.com/mattn/go-runewidth v0.0.12 // indirect
 	github.com/muesli/reflow v0.3.0 // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
