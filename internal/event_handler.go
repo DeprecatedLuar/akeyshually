@@ -162,7 +162,7 @@ func startLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Config
 	state.active[combo] = cancel
 
 	go func() {
-		ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
+		ticker := time.NewTicker(time.Duration(interval * 1e6)) // Convert ms to nanoseconds
 		defer ticker.Stop()
 
 		for {
@@ -210,7 +210,7 @@ func toggleLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Confi
 		m.StartToggleLoop(combo, cancel)
 
 		go func() {
-			ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
+			ticker := time.NewTicker(time.Duration(interval * 1e6)) // Convert ms to nanoseconds
 			defer ticker.Stop()
 
 			for {

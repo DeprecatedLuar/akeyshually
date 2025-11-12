@@ -16,10 +16,10 @@ import (
 var embeddedConfigs embed.FS
 
 type Settings struct {
-	DefaultLoopInterval int    `toml:"default_loop_interval"` // Milliseconds (default: 100)
-	DisableMediaKeys    bool   `toml:"disable_media_keys"`    // Forward media keys to system (default: false)
-	Shell               string `toml:"shell"`                 // Optional: override $SHELL
-	EnvFile             string `toml:"env_file"`              // Optional: source before commands
+	DefaultLoopInterval float64 `toml:"default_loop_interval"` // >= 10 = milliseconds, < 10 = seconds (default: 100)
+	DisableMediaKeys    bool    `toml:"disable_media_keys"`    // Forward media keys to system (default: false)
+	Shell               string  `toml:"shell"`                 // Optional: override $SHELL
+	EnvFile             string  `toml:"env_file"`              // Optional: source before commands
 }
 
 type BehaviorMode int
@@ -42,7 +42,7 @@ type ParsedShortcut struct {
 	KeyCombo string       // "super+k" (without suffix)
 	Behavior BehaviorMode
 	Timing   TimingMode
-	Interval int      // Milliseconds (0 = use default)
+	Interval float64  // Milliseconds (0 = use default)
 	Commands []string // Single command OR switch array
 }
 
@@ -53,6 +53,16 @@ type Config struct {
 
 	// Parsed shortcuts grouped by key combo
 	ParsedShortcuts map[string][]*ParsedShortcut
+}
+
+// normalizeInterval converts interval values based on heuristic:
+// >= 10: treat as milliseconds (legacy behavior)
+// < 10: treat as seconds, convert to milliseconds
+func normalizeInterval(value float64) float64 {
+	if value >= 10 {
+		return value // Already in milliseconds
+	}
+	return value * 1000 // Convert seconds to milliseconds
 }
 
 func Load() (*Config, error) {
@@ -82,6 +92,8 @@ func Load() (*Config, error) {
 	// Set default loop interval if not specified
 	if cfg.Settings.DefaultLoopInterval == 0 {
 		cfg.Settings.DefaultLoopInterval = 100
+	} else {
+		cfg.Settings.DefaultLoopInterval = normalizeInterval(cfg.Settings.DefaultLoopInterval)
 	}
 
 	// Parse shortcuts
@@ -178,7 +190,7 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 	}
 
 	// Parse modifiers (behavior and timing)
-	intervalRegex := regexp.MustCompile(`^(loop|whileheld|toggle)\((\d+)\)$`)
+	intervalRegex := regexp.MustCompile(`^(loop|whileheld|toggle)\((\d+\.?\d*|\d*\.\d+)\)$`)
 
 	for i := 1; i < len(parts); i++ {
 		part := strings.ToLower(parts[i])
@@ -186,7 +198,7 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 		// Check for interval notation
 		if matches := intervalRegex.FindStringSubmatch(part); matches != nil {
 			behaviorName := matches[1]
-			interval, _ := strconv.Atoi(matches[2])
+			interval, _ := strconv.ParseFloat(matches[2], 64)
 
 			switch behaviorName {
 			case "loop", "whileheld":
@@ -194,7 +206,7 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 			case "toggle":
 				shortcut.Behavior = BehaviorToggle
 			}
-			shortcut.Interval = interval
+			shortcut.Interval = normalizeInterval(interval)
 			continue
 		}
 
