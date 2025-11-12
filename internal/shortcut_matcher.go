@@ -309,9 +309,18 @@ func getKeyCode(name string) uint16 {
 }
 
 func getKeyName(code uint16) string {
-	// Simple reverse lookup - returns first match
-	// Aliases are normalized at config parse time, so this only needs
-	// to return ANY valid name for the code
+	// Prefer canonical names for keys with multiple aliases
+	canonicalNames := map[uint16]string{
+		evdev.KEY_ENTER: "return",
+		evdev.KEY_ESC:   "esc",
+		evdev.KEY_SYSRQ: "print",
+	}
+
+	if name, ok := canonicalNames[code]; ok {
+		return name
+	}
+
+	// Fallback to map lookup (still non-deterministic for other duplicates)
 	for name, c := range keyCodeMap {
 		if c == code {
 			return name
