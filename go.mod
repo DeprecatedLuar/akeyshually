@@ -19,3 +19,5 @@ require (
 )
 
 replace github.com/DeprecatedLuar/gohelp => ./pkg/gohelp
+
+replace github.com/DeprecatedLuar/the-satellite/the-lib => ./pkg/the-lib

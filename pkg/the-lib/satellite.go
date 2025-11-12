@@ -4,10 +4,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime/debug"
 	"strings"
 )
 
 const SatelliteURL = "https://raw.githubusercontent.com/DeprecatedLuar/the-satellite/main/satellite.sh"
+
+// Version is set via ldflags during build: -X github.com/DeprecatedLuar/the-satellite/the-lib.Version=vX.Y.Z
+var Version = "dev"
 
 // Updater manages update operations for a specific repository
 type Updater struct {
@@ -62,4 +66,27 @@ func (u *Updater) RunInstaller() error {
 	}
 
 	return nil
+}
+
+// GetVersion returns the current version set via ldflags during build
+// For dev builds, appends git commit hash if available
+func GetVersion() string {
+	if Version != "dev" {
+		return Version
+	}
+
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "dev"
+	}
+
+	for _, setting := range info.Settings {
+		if setting.Key == "vcs.revision" {
+			if len(setting.Value) >= 7 {
+				return "dev-" + setting.Value[:7]
+			}
+		}
+	}
+
+	return "dev"
 }
