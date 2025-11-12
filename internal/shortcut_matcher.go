@@ -1,8 +1,11 @@
 package internal
 
 import (
+	"context"
 	"strings"
 	"sync"
+
+	"github.com/deprecatedluar/akeyshually/internal/config"
 
 	evdev "github.com/holoplot/go-evdev"
 )
@@ -46,10 +49,11 @@ type ModifierState struct {
 	Shift bool
 }
 
-type ParsedShortcut struct {
-	State   ModifierState
-	KeyCode uint16
-	Command string
+// ShortcutKey uniquely identifies a shortcut by combo + behavior + timing
+type ShortcutKey struct {
+	Combo    string
+	Behavior config.BehaviorMode
+	Timing   config.TimingMode
 }
 
 // TapState is shared across all input devices (keyboards and mice)
@@ -85,71 +89,63 @@ func (ts *TapState) Check(code uint16) bool {
 }
 
 type Matcher struct {
-	state        ModifierState
-	shortcuts    []ParsedShortcut
+	state     ModifierState
+	shortcuts map[ShortcutKey]*config.ParsedShortcut
+
+	// Switch state (cycle through commands)
+	switchState map[string]int // "super+k.switch.press" -> next index
+	switchMutex sync.Mutex
+
+	// Toggle state (loop on/off)
+	toggleState map[string]context.CancelFunc // "super+k.toggle.press" -> cancel func
+	toggleMutex sync.Mutex
+
+	// Tap shortcuts (lone modifiers with .onrelease)
 	tapShortcuts map[uint16]string
-	tapState     *TapState // Shared tap state (optional, can be nil)
+
+	// Shared tap state (for mouse cancellation)
+	tapState *TapState
 }
 
-func New(shortcuts map[string]string) *Matcher {
-	parsed := make([]ParsedShortcut, 0, len(shortcuts))
+func New(parsedShortcuts map[string][]*config.ParsedShortcut) *Matcher {
+	shortcuts := make(map[ShortcutKey]*config.ParsedShortcut)
 	tapShortcuts := make(map[uint16]string)
 
-	for shortcut, command := range shortcuts {
-		normalized := strings.ToLower(shortcut)
-
-		// Check if this is a lone modifier (tap shortcut)
-		switch normalized {
-		case "super":
-			tapShortcuts[evdev.KEY_LEFTMETA] = command
-			tapShortcuts[evdev.KEY_RIGHTMETA] = command
-			continue
-		case "ctrl":
-			tapShortcuts[evdev.KEY_LEFTCTRL] = command
-			tapShortcuts[evdev.KEY_RIGHTCTRL] = command
-			continue
-		case "alt":
-			tapShortcuts[evdev.KEY_LEFTALT] = command
-			tapShortcuts[evdev.KEY_RIGHTALT] = command
-			continue
-		case "shift":
-			tapShortcuts[evdev.KEY_LEFTSHIFT] = command
-			tapShortcuts[evdev.KEY_RIGHTSHIFT] = command
-			continue
-		}
-
-		parts := strings.Split(normalized, "+")
-
-		state := ModifierState{}
-		var keyName string
-
-		for _, part := range parts {
-			switch part {
-			case "super":
-				state.Super = true
-			case "ctrl":
-				state.Ctrl = true
-			case "alt":
-				state.Alt = true
-			case "shift":
-				state.Shift = true
-			default:
-				keyName = part
+	// Build shortcut lookup map and extract tap shortcuts
+	for _, shortcutList := range parsedShortcuts {
+		for _, shortcut := range shortcutList {
+			key := ShortcutKey{
+				Combo:    shortcut.KeyCombo,
+				Behavior: shortcut.Behavior,
+				Timing:   shortcut.Timing,
 			}
-		}
+			shortcuts[key] = shortcut
 
-		keyCode := getKeyCode(keyName)
-		if keyCode != 0 {
-			parsed = append(parsed, ParsedShortcut{
-				State:   state,
-				KeyCode: keyCode,
-				Command: command,
-			})
+			// Check for tap shortcuts (lone modifiers with .onrelease)
+			if shortcut.Timing == config.TimingRelease && len(shortcut.Commands) == 1 {
+				normalized := strings.ToLower(shortcut.KeyCombo)
+				switch normalized {
+				case "super":
+					tapShortcuts[evdev.KEY_LEFTMETA] = shortcut.Commands[0]
+					tapShortcuts[evdev.KEY_RIGHTMETA] = shortcut.Commands[0]
+				case "ctrl":
+					tapShortcuts[evdev.KEY_LEFTCTRL] = shortcut.Commands[0]
+					tapShortcuts[evdev.KEY_RIGHTCTRL] = shortcut.Commands[0]
+				case "alt":
+					tapShortcuts[evdev.KEY_LEFTALT] = shortcut.Commands[0]
+					tapShortcuts[evdev.KEY_RIGHTALT] = shortcut.Commands[0]
+				case "shift":
+					tapShortcuts[evdev.KEY_LEFTSHIFT] = shortcut.Commands[0]
+					tapShortcuts[evdev.KEY_RIGHTSHIFT] = shortcut.Commands[0]
+				}
+			}
 		}
 	}
 
 	return &Matcher{
-		shortcuts:    parsed,
+		shortcuts:    shortcuts,
+		switchState:  make(map[string]int),
+		toggleState:  make(map[string]context.CancelFunc),
 		tapShortcuts: tapShortcuts,
 		tapState:     nil, // Set via SetTapState() if needed
 	}
@@ -160,18 +156,50 @@ func (m *Matcher) SetTapState(ts *TapState) {
 	m.tapState = ts
 }
 
-func (m *Matcher) HandleKeyEvent(code uint16, value int32) (string, bool) {
-	if value == 1 {
-		m.updateModifierState(code, true)
-		command, matched := m.checkShortcut(code)
-		if matched {
-			return command, true
-		}
-		return "", false
-	} else if value == 0 {
-		m.updateModifierState(code, false)
+// CheckShortcut checks if a shortcut exists with given combo, behavior, and timing
+func (m *Matcher) CheckShortcut(combo string, behavior config.BehaviorMode, timing config.TimingMode) *config.ParsedShortcut {
+	key := ShortcutKey{
+		Combo:    combo,
+		Behavior: behavior,
+		Timing:   timing,
 	}
-	return "", false
+	return m.shortcuts[key]
+}
+
+// HasReleaseShortcut checks if any release shortcuts exist for a combo
+func (m *Matcher) HasReleaseShortcut(combo string) bool {
+	for key := range m.shortcuts {
+		if key.Combo == combo && key.Timing == config.TimingRelease {
+			return true
+		}
+	}
+	return false
+}
+
+// GetCurrentCombo builds the current key combo string
+func (m *Matcher) GetCurrentCombo(code uint16) string {
+	// Build combo from current state
+	parts := []string{}
+	if m.state.Super {
+		parts = append(parts, "super")
+	}
+	if m.state.Ctrl {
+		parts = append(parts, "ctrl")
+	}
+	if m.state.Alt {
+		parts = append(parts, "alt")
+	}
+	if m.state.Shift {
+		parts = append(parts, "shift")
+	}
+
+	// Find key name
+	keyName := getKeyName(code)
+	if keyName != "" {
+		parts = append(parts, keyName)
+	}
+
+	return strings.Join(parts, "+")
 }
 
 func (m *Matcher) updateModifierState(code uint16, pressed bool) {
@@ -190,11 +218,6 @@ func (m *Matcher) updateModifierState(code uint16, pressed bool) {
 // UpdateModifierState updates the modifier state (exported for external state tracking)
 func (m *Matcher) UpdateModifierState(code uint16, pressed bool) {
 	m.updateModifierState(code, pressed)
-}
-
-// WouldMatch checks if a key code with current modifiers would match a shortcut
-func (m *Matcher) WouldMatch(code uint16) (string, bool) {
-	return m.checkShortcut(code)
 }
 
 // GetCurrentModifiers returns a copy of current modifier state
@@ -229,6 +252,44 @@ func (m *Matcher) CheckTap(code uint16) (string, bool) {
 	return "", false
 }
 
+// GetNextSwitchCommand returns the next command in the switch cycle
+func (m *Matcher) GetNextSwitchCommand(key string, commands []string) string {
+	m.switchMutex.Lock()
+	defer m.switchMutex.Unlock()
+
+	idx := m.switchState[key]
+	command := commands[idx]
+	m.switchState[key] = (idx + 1) % len(commands)
+	return command
+}
+
+// StartToggleLoop starts a toggle loop
+func (m *Matcher) StartToggleLoop(key string, cancel context.CancelFunc) {
+	m.toggleMutex.Lock()
+	defer m.toggleMutex.Unlock()
+	m.toggleState[key] = cancel
+}
+
+// StopToggleLoop stops a toggle loop and returns the cancel function
+func (m *Matcher) StopToggleLoop(key string) context.CancelFunc {
+	m.toggleMutex.Lock()
+	defer m.toggleMutex.Unlock()
+
+	if cancel, exists := m.toggleState[key]; exists {
+		delete(m.toggleState, key)
+		return cancel
+	}
+	return nil
+}
+
+// IsToggleActive checks if a toggle loop is active
+func (m *Matcher) IsToggleActive(key string) bool {
+	m.toggleMutex.Lock()
+	defer m.toggleMutex.Unlock()
+	_, exists := m.toggleState[key]
+	return exists
+}
+
 func IsModifierKey(code uint16) bool {
 	switch code {
 	case evdev.KEY_LEFTMETA, evdev.KEY_RIGHTMETA,
@@ -240,18 +301,18 @@ func IsModifierKey(code uint16) bool {
 	return false
 }
 
-func (m *Matcher) checkShortcut(code uint16) (string, bool) {
-	for _, shortcut := range m.shortcuts {
-		if m.state == shortcut.State && code == shortcut.KeyCode {
-			return shortcut.Command, true
-		}
-	}
-	return "", false
-}
-
 func getKeyCode(name string) uint16 {
 	if code, ok := keyCodeMap[strings.ToLower(name)]; ok {
 		return code
 	}
 	return 0
+}
+
+func getKeyName(code uint16) string {
+	for name, c := range keyCodeMap {
+		if c == code {
+			return name
+		}
+	}
+	return ""
 }

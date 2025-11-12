@@ -26,7 +26,7 @@ func Stop() {
 			fmt.Fprintf(os.Stderr, "Failed to stop systemd service: %v\n", err)
 			os.Exit(1)
 		}
-		fmt.Println("akeyshually service stopped")
+		fmt.Println("Errm... Alright the service has stopped")
 		return
 	}
 

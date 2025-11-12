@@ -42,12 +42,7 @@ func openInEditor(filePath string) {
 	}
 }
 
-// Config opens the main config file in the editor
+// Config opens the config file in the editor
 func Config() {
 	openInEditor("~/.config/akeyshually/config.toml")
-}
-
-// Shortcuts opens the shortcuts config file in the editor
-func Shortcuts() {
-	openInEditor("~/.config/akeyshually/shortcuts.toml")
 }

@@ -282,3 +282,23 @@ func ListenMouse(dev *evdev.InputDevice, handler MouseButtonHandler) error {
 		}
 	}
 }
+
+// IsMediaKey checks if a keycode is a media key (volume, brightness, playback)
+func IsMediaKey(code uint16) bool {
+	switch code {
+	case evdev.KEY_VOLUMEUP,
+		evdev.KEY_VOLUMEDOWN,
+		evdev.KEY_MUTE,
+		evdev.KEY_BRIGHTNESSUP,
+		evdev.KEY_BRIGHTNESSDOWN,
+		evdev.KEY_PLAYPAUSE,
+		evdev.KEY_NEXTSONG,
+		evdev.KEY_PREVIOUSSONG,
+		evdev.KEY_STOPCD,
+		evdev.KEY_PLAYCD,
+		evdev.KEY_PAUSECD:
+		return true
+	default:
+		return false
+	}
+}

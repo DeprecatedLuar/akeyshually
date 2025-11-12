@@ -1,5 +1,77 @@
+
 [settings]
-trigger_on = "release"
-enable_media_keys = false
-env_file = "~/.profile"
-#shell = "/bin/bash"
+default_loop_interval = 100
+disable_media_keys = false  # Set to true to let system handle media keys (GNOME/KDE/etc.)
+#shell = "/bin/bash"  # Override $SHELL
+env_file = "~/.profile"  
+
+[shortcuts]
+"super+k" = "edit_config"
+
+#-[LAUNCHERS]--------------------------------
+
+"super.onrelease" = "rofi"
+"super+b" = "browser"
+"super+shift+b" = "browser2"
+"super+return" = "kitty"
+"super+f" = "dolphin"
+"super+x" = "xkill"
+"super+e" = "email"
+#"ctrl+alt+t" = "kitty"
+"super+v" = "copyq toggle"
+"super+w" = "whatsapp"
+"shift+super+n" = "notetaker"
+
+#-[UTILS]------------------------------------
+
+"print" = "prtscr"
+"super+p" = "prtscr"
+"shift+print" = "/home/user/Workspace/tools/bin/screenshot-save"
+"ctrl+print" = "bash -c \"xdg-open ~/Media/Pictures/temp.png\""
+"f9" = "yap"
+"ctrl+mute" = "mute_mic"
+
+"ctrl+shift+alt+h"="xdotool mousemove_relative 2 0"
+
+#-[MEDIA KEYS]-------------------------------
+
+# Uncomment the keys you want to use
+# Dependencies:
+#   - pactl (audio control via PulseAudio/PipeWire)
+#   - brightnessctl (brightness control)
+#   - playerctl (optional, for media playback control)
+
+# "volumeup" = "volume_up"
+# "volumedown" = "volume_down"
+# "mute" = "mute_toggle"
+# "brightnessup" = "brightness_up"
+# "brightnessdown" = "brightness_down"
+# "playpause" = "media_play_pause"
+# "nextsong" = "media_next"
+# "previoussong" = "media_previous"
+
+[command_variables]#--------------------------
+
+edit_config = "kitty micro ~/.config/akeyshually/config.toml"
+
+browser = "brave-browser --user-data-dir=/home/user/.config/BraveSoftware/1"
+browser2 = "brave-browser --user-data-dir=/home/user/.config/BraveSoftware/2"
+dmenu = "bash -c \"compgen -c | dmenu | sh\""
+rofi = "~/.config/rofi/scripts/launcher_t7"
+email = "flatpak run org.mozilla.Thunderbird"
+mute_mic = "pactl set-source-mute @DEFAULT_SOURCE@ toggle"
+whatsapp = "flatpak run com.rtosta.zapzap"
+notetaker = "bash -c \"source ~/.bashrc && /home/user/.config/bash/bin/notetaker/notetaker\""
+prtscr = "/home/user/Workspace/tools/bin/screenshot-save --temp"
+
+
+#-[MEDIA COMMANDS]---------------------------
+
+volume_up = "pactl set-sink-volume @DEFAULT_SINK@ +5%"
+volume_down = "pactl set-sink-volume @DEFAULT_SINK@ -5%"
+mute_toggle = "pactl set-sink-mute @DEFAULT_SINK@ toggle"
+brightness_up = "brightnessctl set +5%"
+brightness_down = "brightnessctl set 5%-"
+media_play_pause = "playerctl play-pause"
+media_next = "playerctl next"
+media_previous = "playerctl previous"

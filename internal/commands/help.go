@@ -29,8 +29,7 @@ func Help(args ...string) {
 	gohelp.Item("akeyshually stop", "Stop running daemon")
 	gohelp.Item("akeyshually restart", "Restart daemon")
 	gohelp.Item("akeyshually update", "Check for and install updates")
-	gohelp.Item("akeyshually config", "Edit main config file in $EDITOR")
-	gohelp.Item("akeyshually shortcuts", "Edit shortcuts file in $EDITOR")
+	gohelp.Item("akeyshually config", "Edit config file in $EDITOR")
 	gohelp.Item("akeyshually help [topic]", "Show this help message")
 	gohelp.Item("akeyshually version", "Show version information")
 
@@ -44,43 +43,39 @@ func Help(args ...string) {
 func HelpConfig() {
 	gohelp.PrintHeader("Configuration Documentation")
 
-	gohelp.Paragraph("Config Directory: ~/.config/akeyshually/")
+	gohelp.Paragraph("Config File: ~/.config/akeyshually/config.toml")
 
-	// config.toml
-	fmt.Println(gohelp.Header("config.toml (optional)"))
-	gohelp.Paragraph("[settings]")
-	gohelp.Item("trigger_on", "When to execute shortcuts: \"press\" (default) or \"release\"")
-	gohelp.Item("", "  • press: Execute on key down")
-	gohelp.Item("", "  • release: Execute on key up (required for modifier taps)")
-	gohelp.Item("enable_media_keys", "Load media-keys.toml: true or false (default: false)")
+	// Settings section
+	fmt.Println(gohelp.Header("[settings]"))
+	gohelp.Item("default_loop_interval", "Default interval for .loop/.toggle behaviors (milliseconds, default: 100)")
+	gohelp.Item("disable_media_keys", "Forward media keys to system (default: false)")
+	gohelp.Item("", "  • Set to true when using GNOME/KDE media key daemons")
 	gohelp.Item("shell", "Shell to use for commands (default: $SHELL, fallback: sh)")
 	gohelp.Item("env_file", "File to source before command execution (optional)")
 
-	gohelp.Paragraph("Example:\n  [settings]\n  trigger_on = \"release\"\n  enable_media_keys = false\n  shell = \"/bin/bash\"\n  env_file = \"~/.profile\"")
+	gohelp.Paragraph("Example:\n  [settings]\n  default_loop_interval = 100\n  disable_media_keys = false\n  shell = \"/bin/bash\"\n  env_file = \"~/.profile\"")
 
-	// shortcuts.toml
-	fmt.Println(gohelp.Header("shortcuts.toml (required)"))
-	gohelp.Paragraph("[shortcuts]\nDefine keyboard shortcuts: \"modifier+modifier+key\" = \"command\"")
+	// Shortcuts section
+	fmt.Println(gohelp.Header("[shortcuts]"))
+	gohelp.Paragraph("Define keyboard shortcuts: \"modifier+modifier+key\" = \"command\"")
 	gohelp.Item("Modifiers:", "super, ctrl, alt, shift (lowercase, no left/right distinction)")
 	gohelp.Item("Keys:", "lowercase letters, numbers, special keys (print, space, etc.)")
 	gohelp.Item("Syntax:", "Use + to separate modifiers and key")
+	gohelp.Item("Behaviors:", ".loop, .toggle, .switch, .whileheld (optional interval: .loop(50))")
+	gohelp.Item("Timing:", ".onpress (default), .onrelease")
 
-	gohelp.Paragraph("Examples:\n  [shortcuts]\n  \"super+t\" = \"alacritty\"\n  \"ctrl+alt+delete\" = \"systemctl reboot\"\n  \"print\" = \"maim -s | xclip -selection clipboard -t image/png\"\n  \"super+b\" = \"browser\"  # References [commands] section")
+	gohelp.Paragraph("Examples:\n  [shortcuts]\n  \"super.onrelease\" = \"rofi\"\n  \"super+t\" = \"alacritty\"\n  \"ctrl+alt+delete\" = \"systemctl reboot\"\n  \"print\" = \"prtscr\"  # References [command_variables] section")
 
-	gohelp.Paragraph("Modifier Tap Detection (release mode only):\n  \"super\" = \"rofi -show drun\"  # Execute on lone Super tap")
+	gohelp.Paragraph("Media Keys:\n  Media key shortcuts are included as comments. Uncomment to enable:\n  # \"volumeup\" = \"volume_up\"\n  # \"volumedown\" = \"volume_down\"")
 
-	// Commands section
-	fmt.Println(gohelp.Header("commands (optional - for DRY)"))
-	gohelp.Paragraph("Define reusable command aliases. Referenced shortcuts look up here first.")
-	gohelp.Paragraph("Example:\n  [commands]\n  browser = \"brave-browser --new-window\"\n  terminal = \"alacritty --working-directory ~\"")
-
-	// media-keys.toml
-	fmt.Println(gohelp.Header("media-keys.toml (optional)"))
-	gohelp.Paragraph("Loaded only if enable_media_keys=true in config.toml\nSame format as shortcuts.toml for media key bindings")
+	// Command variables section
+	fmt.Println(gohelp.Header("[command_variables]"))
+	gohelp.Paragraph("Define reusable command aliases. Shortcuts reference these first, then use literal strings.")
+	gohelp.Paragraph("Example:\n  [command_variables]\n  browser = \"brave-browser --new-window\"\n  terminal = \"alacritty --working-directory ~\"")
 
 	// Auto-reload
 	fmt.Println(gohelp.Header("Auto-Reload"))
-	gohelp.Paragraph("Config files are automatically reloaded when modified (no restart needed)")
+	gohelp.Paragraph("Config file is automatically reloaded when modified (no restart needed)")
 
 	// Environment
 	fmt.Println(gohelp.Header("Environment Variables"))
