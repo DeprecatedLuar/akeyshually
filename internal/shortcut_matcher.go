@@ -309,6 +309,9 @@ func getKeyCode(name string) uint16 {
 }
 
 func getKeyName(code uint16) string {
+	// Simple reverse lookup - returns first match
+	// Aliases are normalized at config parse time, so this only needs
+	// to return ANY valid name for the code
 	for name, c := range keyCodeMap {
 		if c == code {
 			return name

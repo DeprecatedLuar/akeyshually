@@ -61,6 +61,9 @@ func CreateUnifiedHandler(m *Matcher, cfg *config.Config, loopState *LoopState) 
 
 			// Check for press-triggered shortcuts
 			combo := m.GetCurrentCombo(code)
+			if logging {
+				fmt.Fprintf(os.Stderr, "[DEBUG] Key press - combo: %q, code: %d\n", combo, code)
+			}
 
 			// Check normal press shortcuts
 			if shortcut := m.CheckShortcut(combo, config.BehaviorNormal, config.TimingPress); shortcut != nil {

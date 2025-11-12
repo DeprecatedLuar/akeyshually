@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/fsnotify/fsnotify"
 )
@@ -23,6 +24,20 @@ func Watch(configDir string) error {
 		return fmt.Errorf("failed to watch directory %s: %w", configDir, err)
 	}
 
+	// If config.toml is a symlink, also watch the target directory
+	configPath := filepath.Join(configDir, "config.toml")
+	if realPath, err := filepath.EvalSymlinks(configPath); err == nil && realPath != configPath {
+		realDir := filepath.Dir(realPath)
+		if realDir != configDir {
+			if err := watcher.Add(realDir); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to watch symlink target directory %s: %v\n", realDir, err)
+			}
+		}
+	}
+
+	var lastRestart time.Time
+	debounce := 1 * time.Second
+
 	for {
 		select {
 		case event, ok := <-watcher.Events:
@@ -33,6 +48,11 @@ func Watch(configDir string) error {
 			// Only trigger on write/create events for .toml files
 			if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
 				if strings.HasSuffix(event.Name, ".toml") {
+					// Debounce: ignore if we just restarted
+					if time.Since(lastRestart) < debounce {
+						continue
+					}
+					lastRestart = time.Now()
 					restartSelf()
 					return nil
 				}

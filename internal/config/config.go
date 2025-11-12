@@ -128,17 +128,17 @@ func normalizeKey(key string) string {
 		return "ctrl"
 	case "sft":
 		return "shift"
-	// Regular key aliases
-	case "prt", "prtsc":
+	// Regular key aliases (normalize to canonical/shorter forms)
+	case "prt", "prtsc", "printscreen":
 		return "print"
-	case "ret":
+	case "ret", "enter":
 		return "return"
 	case "del":
 		return "delete"
 	case "ins":
 		return "insert"
-	case "esc":
-		return "escape"
+	case "escape":
+		return "esc"
 	case "bksp":
 		return "backspace"
 	}
