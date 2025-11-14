@@ -27,10 +27,10 @@ I made akeyshually to not only have my configs in a single git tracked file, but
 <img src="other/assets/ermactually.jpeg" alt="Actually..." align="right" width="200"/>
 
 - Works on X11, Wayland, literally any WM/DE via evdev
-- All settings declared on the TOML config
+- All settings declared in a single TOML config
 - **Actually lightweight** takes about ~3MB binary, <3MB RAM, 0% CPU when idle
 - Configs are hot-reloaded on edit
-- Special modes like .whileheld or .onrelese and even .toggle
+- Special modes like `.whileheld`, `.toggle`, `.switch`, `.onrelease`
 - You can literally make an auto-clicker with a single line
 - Works alongside remappers (keyd, kanata, kmonad, xremap...)
 
@@ -96,32 +96,36 @@ First run auto-generates config files in `~/.config/akeyshually/`. Just run `ake
 
 ## Configuration
 
-Config files live at `~/.config/akeyshually/`:
-- `config.toml` - Settings (trigger mode, media keys, shell)
-- `shortcuts.toml` - Your keyboard shortcuts
-- `media-keys.toml` - Optional media key bindings
-- `akeyshually.service` - Systemd service file
+Config lives at `~/.config/akeyshually/`:
+- `config.toml` - All-in-one config (settings, shortcuts, command aliases)
+- `akeyshually.service` - Systemd service file (with install instructions)
 
 <details>
-<summary>Default Configuration Example</summary>
+<summary>Configuration Example</summary>
 
 <br>
 
 ```toml
+# ~/.config/akeyshually/config.toml
 
-[shortcuts] # ~/.config/akeyshually/shortcuts.toml
+[settings]
+default_loop_interval = 100  # Milliseconds for .whileheld/.toggle behaviors
+disable_media_keys = false   # Forward media keys to system (GNOME/KDE daemons)
+#shell = "/bin/bash"         # Optional: override $SHELL
+#env_file = "~/.profile"     # Optional: source before commands
+
+[shortcuts]
 "super+k" = "edit_config"
 
 #-[LAUNCHERS]--------------------------------
 
-"super" = "rofi"
+"super.onrelease" = "rofi"  # Modifier tap (executes on release if pressed alone)
 "super+b" = "browser"
 "super+shift+b" = "browser2"
 "super+return" = "kitty"
 "super+f" = "dolphin"
 "super+x" = "xkill"
 "super+e" = "email"
-#"ctrl+alt+t" = "kitty"
 "super+v" = "copyq toggle"
 "super+w" = "whatsapp"
 "shift+super+n" = "notetaker"
@@ -132,27 +136,71 @@ Config files live at `~/.config/akeyshually/`:
 "super+p" = "prtscr"
 "shift+print" = "/home/user/Workspace/tools/bin/screenshot-save"
 "ctrl+print" = "bash -c \"xdg-open ~/Media/Pictures/temp.png\""
-"f9" = "yap"
 "ctrl+mute" = "mute_mic"
 
+# Advanced behaviors
+"f9.whileheld(50)" = "xdotool click 1"  # Auto-clicker: clicks every 50ms while held
+"f10.toggle" = "xdotool click 1"        # Toggle: starts/stops loop on each press
+"super+tab.switch" = ["window1", "window2", "window3"]  # Cycle through commands
 
-"ctrl+shift+alt+h"="xdotool mousemove_relative 2 0"
+# Media keys - uncomment to enable
+#"volumeup" = "volume_up"
+#"volumedown" = "volume_down"
+#"mute" = "mute_toggle"
 
-
-
-[commands]#----------------------------------
-
-edit_config = "kitty micro ~/.config/akeyshually/shortcuts.toml"
+[command_variables]
+edit_config = "kitty micro ~/.config/akeyshually/config.toml"
 
 browser = "brave-browser --user-data-dir=/home/user/.config/BraveSoftware/1"
 browser2 = "brave-browser --user-data-dir=/home/user/.config/BraveSoftware/2"
-dmenu = "bash -c \"compgen -c | dmenu | sh\""
 rofi = "~/.config/rofi/scripts/launcher_t7"
 email = "flatpak run org.mozilla.Thunderbird"
 mute_mic = "pactl set-source-mute @DEFAULT_SOURCE@ toggle"
 whatsapp = "flatpak run com.rtosta.zapzap"
 notetaker = "bash -c \"source ~/.bashrc && /home/user/.config/bash/bin/notetaker/notetaker\""
 prtscr = "/home/user/Workspace/tools/bin/screenshot-save --temp"
+
+# Media key commands (uncomment shortcuts above to use)
+volume_up = "pactl set-sink-volume @DEFAULT_SINK@ +5%"
+volume_down = "pactl set-sink-volume @DEFAULT_SINK@ -5%"
+mute_toggle = "pactl set-sink-mute @DEFAULT_SINK@ toggle"
+```
+
+</details>
+
+<details>
+<summary>Shortcut Behaviors</summary>
+
+<br>
+
+**Normal (default):**
+```toml
+"super+t" = "kitty"  # Executes on key press
+```
+
+**While Held (repeat while key is held):**
+```toml
+"f9.whileheld" = "xdotool click 1"       # Uses default_loop_interval
+"f9.whileheld(0.05)" = "xdotool click 1"   # Custom interval (50ms)
+"f9.whileheld(0.015)" = "xdotool click"  # Sub-second intervals (15ms)
+"f9.loop(50)" = "xdotool click 1"        # Alias for .whileheld
+```
+
+**Toggle (start/stop on each press):**
+```toml
+"f10.toggle" = "xdotool click 1"       # Loop continues after release
+"f10.toggle(0.1)" = "xdotool click 1"  # Custom interval in seconds
+```
+
+**Switch (cycle through commands):**
+```toml
+"super+tab.switch" = ["cmd1", "cmd2", "cmd3"]  # Cycles on each press
+```
+
+**Release timing:**
+```toml
+"super.onrelease" = "rofi"  # Modifier tap: executes on release if pressed alone
+"super+t.onrelease" = "cmd" # Executes when keys are released
 ```
 
 </details>
