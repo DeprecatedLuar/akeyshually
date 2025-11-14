@@ -1,6 +1,4 @@
-# Whitelist
-!README.md
-!LICENSE
+
 
 # Build artifacts
 *.exe
@@ -48,3 +46,6 @@ implementation-history.md
 *doc.md
 doc.md
 
+# Whitelist
+!README.md
+!LICENSE
