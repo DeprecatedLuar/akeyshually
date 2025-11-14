@@ -29,6 +29,9 @@ var keyCodeMap = map[string]uint16{
 	"f1": evdev.KEY_F1, "f2": evdev.KEY_F2, "f3": evdev.KEY_F3, "f4": evdev.KEY_F4,
 	"f5": evdev.KEY_F5, "f6": evdev.KEY_F6, "f7": evdev.KEY_F7, "f8": evdev.KEY_F8,
 	"f9": evdev.KEY_F9, "f10": evdev.KEY_F10, "f11": evdev.KEY_F11, "f12": evdev.KEY_F12,
+	"f13": evdev.KEY_F13, "f14": evdev.KEY_F14, "f15": evdev.KEY_F15, "f16": evdev.KEY_F16,
+	"f17": evdev.KEY_F17, "f18": evdev.KEY_F18, "f19": evdev.KEY_F19, "f20": evdev.KEY_F20,
+	"f21": evdev.KEY_F21, "f22": evdev.KEY_F22, "f23": evdev.KEY_F23, "f24": evdev.KEY_F24,
 	"left": evdev.KEY_LEFT, "right": evdev.KEY_RIGHT,
 	"up": evdev.KEY_UP, "down": evdev.KEY_DOWN,
 	"home": evdev.KEY_HOME, "end": evdev.KEY_END,
@@ -40,6 +43,28 @@ var keyCodeMap = map[string]uint16{
 	"playpause": evdev.KEY_PLAYPAUSE, "play": evdev.KEY_PLAYPAUSE,
 	"nextsong": evdev.KEY_NEXTSONG, "next": evdev.KEY_NEXTSONG,
 	"previoussong": evdev.KEY_PREVIOUSSONG, "previous": evdev.KEY_PREVIOUSSONG,
+}
+
+// Reverse lookup map for O(1) code -> name lookups
+var codeToNameMap map[uint16]string
+
+func init() {
+	codeToNameMap = make(map[uint16]string, len(keyCodeMap))
+
+	// Build reverse lookup from keyCodeMap
+	for name, code := range keyCodeMap {
+		codeToNameMap[code] = name
+	}
+
+	// Override with canonical names (preferred)
+	canonicalOverrides := map[uint16]string{
+		evdev.KEY_ENTER: "return",
+		evdev.KEY_ESC:   "esc",
+		evdev.KEY_SYSRQ: "print",
+	}
+	for code, name := range canonicalOverrides {
+		codeToNameMap[code] = name
+	}
 }
 
 type ModifierState struct {
@@ -178,8 +203,13 @@ func (m *Matcher) HasReleaseShortcut(combo string) bool {
 
 // GetCurrentCombo builds the current key combo string
 func (m *Matcher) GetCurrentCombo(code uint16) string {
-	// Build combo from current state
-	parts := []string{}
+	// Fast path: no modifiers pressed
+	if !m.state.Super && !m.state.Ctrl && !m.state.Alt && !m.state.Shift {
+		return codeToNameMap[code]
+	}
+
+	// Build combo from current state (pre-allocate for up to 5 parts: 4 modifiers + 1 key)
+	parts := make([]string, 0, 5)
 	if m.state.Super {
 		parts = append(parts, "super")
 	}
@@ -193,9 +223,8 @@ func (m *Matcher) GetCurrentCombo(code uint16) string {
 		parts = append(parts, "shift")
 	}
 
-	// Find key name
-	keyName := getKeyName(code)
-	if keyName != "" {
+	// Find key name using O(1) lookup
+	if keyName := codeToNameMap[code]; keyName != "" {
 		parts = append(parts, keyName)
 	}
 
@@ -309,22 +338,5 @@ func getKeyCode(name string) uint16 {
 }
 
 func getKeyName(code uint16) string {
-	// Prefer canonical names for keys with multiple aliases
-	canonicalNames := map[uint16]string{
-		evdev.KEY_ENTER: "return",
-		evdev.KEY_ESC:   "esc",
-		evdev.KEY_SYSRQ: "print",
-	}
-
-	if name, ok := canonicalNames[code]; ok {
-		return name
-	}
-
-	// Fallback to map lookup (still non-deterministic for other duplicates)
-	for name, c := range keyCodeMap {
-		if c == code {
-			return name
-		}
-	}
-	return ""
+	return codeToNameMap[code]
 }
