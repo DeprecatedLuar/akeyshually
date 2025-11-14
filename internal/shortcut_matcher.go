@@ -130,6 +130,9 @@ type Matcher struct {
 
 	// Shared tap state (for mouse cancellation)
 	tapState *TapState
+
+	// Reusable string builder (avoids allocations in hot path)
+	comboBuilder strings.Builder
 }
 
 func New(parsedShortcuts map[string][]*config.ParsedShortcut) *Matcher {
@@ -203,32 +206,49 @@ func (m *Matcher) HasReleaseShortcut(combo string) bool {
 
 // GetCurrentCombo builds the current key combo string
 func (m *Matcher) GetCurrentCombo(code uint16) string {
-	// Fast path: no modifiers pressed
+	// Fast path: no modifiers (most common case)
 	if !m.state.Super && !m.state.Ctrl && !m.state.Alt && !m.state.Shift {
 		return codeToNameMap[code]
 	}
 
-	// Build combo from current state (pre-allocate for up to 5 parts: 4 modifiers + 1 key)
-	parts := make([]string, 0, 5)
+	// Build combo without allocations
+	m.comboBuilder.Reset()
+	needPlus := false
+
 	if m.state.Super {
-		parts = append(parts, "super")
+		m.comboBuilder.WriteString("super")
+		needPlus = true
 	}
 	if m.state.Ctrl {
-		parts = append(parts, "ctrl")
+		if needPlus {
+			m.comboBuilder.WriteByte('+')
+		}
+		m.comboBuilder.WriteString("ctrl")
+		needPlus = true
 	}
 	if m.state.Alt {
-		parts = append(parts, "alt")
+		if needPlus {
+			m.comboBuilder.WriteByte('+')
+		}
+		m.comboBuilder.WriteString("alt")
+		needPlus = true
 	}
 	if m.state.Shift {
-		parts = append(parts, "shift")
+		if needPlus {
+			m.comboBuilder.WriteByte('+')
+		}
+		m.comboBuilder.WriteString("shift")
+		needPlus = true
 	}
 
-	// Find key name using O(1) lookup
-	if keyName := codeToNameMap[code]; keyName != "" {
-		parts = append(parts, keyName)
+	if name := codeToNameMap[code]; name != "" {
+		if needPlus {
+			m.comboBuilder.WriteByte('+')
+		}
+		m.comboBuilder.WriteString(name)
 	}
 
-	return strings.Join(parts, "+")
+	return m.comboBuilder.String()
 }
 
 func (m *Matcher) updateModifierState(code uint16, pressed bool) {

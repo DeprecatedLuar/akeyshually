@@ -23,6 +23,24 @@ func main() {
 }
 
 func startDaemon() {
+	// Check for existing instances
+	pid, err := internal.GetRunningDaemonPid()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to check daemon status: %v\n", err)
+		os.Exit(1)
+	}
+
+	if pid > 0 {
+		fmt.Fprintf(os.Stderr, "Errm... akeyshually, the daemon is already running (PID: %d)\n", pid)
+		os.Exit(1)
+	}
+
+	// Write PID file for current process
+	currentPid := os.Getpid()
+	if err := internal.WritePidFile(currentPid); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to write pidfile: %v\n", err)
+	}
+
 	if err := config.EnsureConfigExists(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize config: %v\n", err)
 		os.Exit(1)

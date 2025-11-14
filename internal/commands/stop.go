@@ -30,22 +30,15 @@ func Stop() {
 		return
 	}
 
-	// Manual daemon mode - use pidfile
-	pid, err := internal.ReadPidFile()
+	// Manual daemon mode - check for running process
+	pid, err := internal.GetRunningDaemonPid()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to read pidfile: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Failed to check daemon status: %v\n", err)
 		os.Exit(1)
 	}
 
 	if pid <= 0 {
-		fmt.Fprintf(os.Stderr, "akeyshually is not running (no pidfile found)\n")
-		os.Exit(1)
-	}
-
-	if !internal.IsProcessRunning(pid) {
-		fmt.Fprintf(os.Stderr, "akeyshually is not running (stale pidfile)\n")
-		// Clean up stale pidfile
-		internal.RemovePidFile()
+		fmt.Fprintf(os.Stderr, "akeyshually, there is nothing running\n")
 		os.Exit(1)
 	}
 

@@ -20,7 +20,7 @@ func Execute(command string, cfg *config.Config) {
 		}
 	}
 
-	fullCommand := "cd && " + command
+	fullCommand := "cd &&" + command
 
 	if cfg.Settings.EnvFile != "" {
 		envFile := expandHome(cfg.Settings.EnvFile)

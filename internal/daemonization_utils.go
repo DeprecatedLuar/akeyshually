@@ -96,6 +96,46 @@ func HasSystemdService() (bool, error) {
 	return err == nil, nil
 }
 
+// GetRunningDaemonPid checks for running akeyshually daemon
+// Checks system first (ground truth via pgrep)
+// Returns PID if running, 0 if not running
+func GetRunningDaemonPid() (int, error) {
+	cmd := exec.Command("pgrep", "-x", "akeyshually")
+	output, err := cmd.Output()
+	if err != nil {
+		// pgrep returns exit code 1 when no processes found
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("failed to search for running processes: %w", err)
+	}
+
+	pidStr := strings.TrimSpace(string(output))
+	if pidStr == "" {
+		return 0, nil
+	}
+
+	// pgrep can return multiple PIDs on multiple lines
+	lines := strings.Split(pidStr, "\n")
+	if len(lines) == 0 {
+		return 0, nil
+	}
+
+	// Exclude current process
+	currentPid := os.Getpid()
+	for _, line := range lines {
+		pid, err := strconv.Atoi(strings.TrimSpace(line))
+		if err != nil {
+			continue
+		}
+		if pid != currentPid {
+			return pid, nil
+		}
+	}
+
+	return 0, nil
+}
+
 // Daemonize forks the process to run in background
 func Daemonize() error {
 	// Get current executable path
