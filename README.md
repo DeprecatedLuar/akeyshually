@@ -2,7 +2,7 @@
   <img src="other/assets/erm.webp" alt="akeyshually banner" width="400">
 </div>
 
-<p align="center">Errm... Akeyshually, this is an evdev-based userspace daemon configured in TOML that intercepts raw input events, performs stateful modifier tracking, and executes arbitrary shell commands through a fire-and-forget subprocess model</p>
+<p align="center">Errm... Akeyshually, this is an evdev-based userspace daemon configured in TOML that intercepts raw input events, performs stateful modifier tracking, and executes arbitrary shell commands through a fire-and-forget subprocess model regardless of session type or graphical environment manager</p>
 
 <p align="center">
   <a href="https://github.com/DeprecatedLuar/akeyshually/stargazers">
