@@ -25,6 +25,15 @@ var keyCodeMap = map[string]uint16{
 	"space": evdev.KEY_SPACE, "tab": evdev.KEY_TAB,
 	"esc": evdev.KEY_ESC, "escape": evdev.KEY_ESC,
 	"backspace": evdev.KEY_BACKSPACE,
+	"semicolon": evdev.KEY_SEMICOLON, ";": evdev.KEY_SEMICOLON,
+	"ro": evdev.KEY_RO,
+	"102nd": evdev.KEY_102ND,
+	"kp0": evdev.KEY_KP0, "kp1": evdev.KEY_KP1, "kp2": evdev.KEY_KP2, "kp3": evdev.KEY_KP3,
+	"kp4": evdev.KEY_KP4, "kp5": evdev.KEY_KP5, "kp6": evdev.KEY_KP6, "kp7": evdev.KEY_KP7,
+	"kp8": evdev.KEY_KP8, "kp9": evdev.KEY_KP9,
+	"kpplus": evdev.KEY_KPPLUS, "kpminus": evdev.KEY_KPMINUS,
+	"kpasterisk": evdev.KEY_KPASTERISK, "kpslash": evdev.KEY_KPSLASH,
+	"kpenter": evdev.KEY_KPENTER, "kpdot": evdev.KEY_KPDOT,
 	"print": evdev.KEY_SYSRQ, "printscreen": evdev.KEY_SYSRQ,
 	"f1": evdev.KEY_F1, "f2": evdev.KEY_F2, "f3": evdev.KEY_F3, "f4": evdev.KEY_F4,
 	"f5": evdev.KEY_F5, "f6": evdev.KEY_F6, "f7": evdev.KEY_F7, "f8": evdev.KEY_F8,
@@ -43,6 +52,7 @@ var keyCodeMap = map[string]uint16{
 	"playpause": evdev.KEY_PLAYPAUSE, "play": evdev.KEY_PLAYPAUSE,
 	"nextsong": evdev.KEY_NEXTSONG, "next": evdev.KEY_NEXTSONG,
 	"previoussong": evdev.KEY_PREVIOUSSONG, "previous": evdev.KEY_PREVIOUSSONG,
+	"calc": evdev.KEY_CALC, "calculator": evdev.KEY_CALC,
 }
 
 // Reverse lookup map for O(1) code -> name lookups
