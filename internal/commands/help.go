@@ -15,6 +15,9 @@ func Help(args ...string) {
 		case "config":
 			HelpConfig()
 			return
+		case "overlays", "overlay":
+			HelpOverlays()
+			return
 		default:
 			fmt.Fprintf(os.Stderr, "Unknown help topic: %s\n\n", args[0])
 		}
@@ -29,12 +32,17 @@ func Help(args ...string) {
 	gohelp.Item("akeyshually stop", "Stop running daemon")
 	gohelp.Item("akeyshually restart", "Restart daemon")
 	gohelp.Item("akeyshually update", "Check for and install updates")
-	gohelp.Item("akeyshually config", "Edit config file in $EDITOR")
+	gohelp.Item("akeyshually config [file]", "Edit config file in $EDITOR")
+	gohelp.Item("akeyshually enable <file>", "Enable config overlay")
+	gohelp.Item("akeyshually disable <file>", "Disable config overlay")
+	gohelp.Item("akeyshually list", "List all config files and their status")
+	gohelp.Item("akeyshually clear", "Disable all overlays")
 	gohelp.Item("akeyshually help [topic]", "Show this help message")
 	gohelp.Item("akeyshually version", "Show version information")
 
 	fmt.Println("\nHelp Topics:")
 	gohelp.Item("akeyshually help config", "Configuration file documentation")
+	gohelp.Item("akeyshually help overlays", "Config overlay system documentation")
 
 	gohelp.Paragraph("Config: ~/.config/akeyshually/")
 }
@@ -81,3 +89,36 @@ func HelpConfig() {
 	fmt.Println(gohelp.Header("Environment Variables"))
 	gohelp.Item("LOGGING=1", "Enable shortcut execution logging to stderr")
 }
+
+// HelpOverlays displays config overlay system documentation
+func HelpOverlays() {
+	gohelp.PrintHeader("Config Overlay System")
+
+	gohelp.Paragraph("Overlay configs allow you to enable/disable groups of shortcuts dynamically without editing the main config.toml.")
+
+	fmt.Println(gohelp.Header("Use Cases"))
+	gohelp.Item("• Gaming mode", "Override window manager shortcuts while gaming")
+	gohelp.Item("• Work profiles", "Different shortcuts for different projects")
+	gohelp.Item("• Application sets", "Load shortcuts specific to certain apps")
+
+	fmt.Println(gohelp.Header("How It Works"))
+	gohelp.Item("1. Base config", "config.toml is always loaded first")
+	gohelp.Item("2. Overlays merge", "Enabled overlays merge on top, overriding base shortcuts")
+	gohelp.Item("3. Auto-reload", "Enabled overlays are watched for changes")
+
+	fmt.Println(gohelp.Header("Commands"))
+	gohelp.Item("akeyshually enable gaming.toml", "Enable overlay and restart daemon")
+	gohelp.Item("akeyshually disable gaming.toml", "Disable overlay and restart daemon")
+	gohelp.Item("akeyshually list", "Show all config files and their status")
+	gohelp.Item("akeyshually clear", "Disable all overlays")
+	gohelp.Item("akeyshually config gaming", "Edit gaming.toml overlay")
+
+	fmt.Println(gohelp.Header("Creating Overlays"))
+	gohelp.Paragraph("Create any .toml file in ~/.config/akeyshually/ with [shortcuts] and [command_variables] sections:")
+	gohelp.Paragraph("Example gaming.toml:\n  [shortcuts]\n  \"super+w\" = \"echo 'disabled in gaming mode'\"\n  \"super+q\" = \"echo 'disabled in gaming mode'\"\n\n  [command_variables]\n  # Optional command aliases")
+
+	fmt.Println(gohelp.Header("Settings"))
+	gohelp.Item("notify_on_overlay_change", "Desktop notifications when overlays change (default: false)")
+	gohelp.Paragraph("Enable in config.toml:\n  [settings]\n  notify_on_overlay_change = true")
+}
+

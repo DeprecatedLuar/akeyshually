@@ -48,13 +48,30 @@ func Watch(configDir string) error {
 			// Only trigger on write/create events for .toml files
 			if event.Op&(fsnotify.Write|fsnotify.Create) != 0 {
 				if strings.HasSuffix(event.Name, ".toml") {
-					// Debounce: ignore if we just restarted
-					if time.Since(lastRestart) < debounce {
-						continue
+					basename := filepath.Base(event.Name)
+
+					// Check if this file should trigger reload
+					shouldReload := basename == "config.toml"
+					if !shouldReload {
+						// Check if it's an enabled overlay
+						enabled, _ := ReadEnabledState()
+						for _, e := range enabled {
+							if basename == e {
+								shouldReload = true
+								break
+							}
+						}
 					}
-					lastRestart = time.Now()
-					restartSelf()
-					return nil
+
+					if shouldReload {
+						// Debounce: ignore if we just restarted
+						if time.Since(lastRestart) < debounce {
+							continue
+						}
+						lastRestart = time.Now()
+						restartSelf()
+						return nil
+					}
 				}
 			}
 

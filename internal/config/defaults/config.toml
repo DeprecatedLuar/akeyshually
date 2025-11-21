@@ -2,7 +2,8 @@
 default_loop_interval = 100
 disable_media_keys = false  # Set to true to let system handle media keys (GNOME/KDE/etc.)
 #shell = "/bin/bash"  # Override $SHELL
-env_file = "~/.profile"  
+env_file = "~/.profile"
+#notify_on_overlay_change = false  # Set to true for desktop notifications on overlay changes  
 
 [shortcuts]
 "super+k" = "edit_config"

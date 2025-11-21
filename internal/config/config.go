@@ -16,10 +16,11 @@ import (
 var embeddedConfigs embed.FS
 
 type Settings struct {
-	DefaultLoopInterval float64 `toml:"default_loop_interval"` // >= 10 = milliseconds, < 10 = seconds (default: 100)
-	DisableMediaKeys    bool    `toml:"disable_media_keys"`    // Forward media keys to system (default: false)
-	Shell               string  `toml:"shell"`                 // Optional: override $SHELL
-	EnvFile             string  `toml:"env_file"`              // Optional: source before commands
+	DefaultLoopInterval   float64 `toml:"default_loop_interval"`    // >= 10 = milliseconds, < 10 = seconds (default: 100)
+	DisableMediaKeys      bool    `toml:"disable_media_keys"`       // Forward media keys to system (default: false)
+	Shell                 string  `toml:"shell"`                    // Optional: override $SHELL
+	EnvFile               string  `toml:"env_file"`                 // Optional: source before commands
+	NotifyOnOverlayChange bool    `toml:"notify_on_overlay_change"` // Desktop notifications for overlay changes
 }
 
 type BehaviorMode int
@@ -104,6 +105,72 @@ func Load() (*Config, error) {
 			return nil, fmt.Errorf("failed to parse shortcut '%s': %w", key, err)
 		}
 		cfg.ParsedShortcuts[parsed.KeyCombo] = append(cfg.ParsedShortcuts[parsed.KeyCombo], parsed)
+	}
+
+	return cfg, nil
+}
+
+// LoadWithOverlays loads the base config and merges overlay configs on top
+func LoadWithOverlays(overlays []string) (*Config, error) {
+	base, err := Load()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, overlayFile := range overlays {
+		overlay, err := loadOverlay(overlayFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to load overlay %s: %v\n", overlayFile, err)
+			continue
+		}
+		base.Merge(overlay)
+	}
+
+	return base, nil
+}
+
+// Merge merges an overlay config into this config
+func (c *Config) Merge(overlay *Config) {
+	// Merge shortcuts (overlay overrides base)
+	for key, value := range overlay.Shortcuts {
+		c.Shortcuts[key] = value
+	}
+
+	// Merge command_variables (overlay overrides base)
+	for key, value := range overlay.Commands {
+		c.Commands[key] = value
+	}
+
+	// Settings are ignored - only base settings apply
+
+	// Rebuild ParsedShortcuts after merge
+	c.ParsedShortcuts = make(map[string][]*ParsedShortcut)
+	for key, value := range c.Shortcuts {
+		parsed, err := ParseShortcut(key, value)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to parse shortcut '%s': %v\n", key, err)
+			continue
+		}
+		c.ParsedShortcuts[parsed.KeyCombo] = append(c.ParsedShortcuts[parsed.KeyCombo], parsed)
+	}
+}
+
+// loadOverlay loads an overlay config file from the config directory
+func loadOverlay(filename string) (*Config, error) {
+	configDir, err := GetConfigDir()
+	if err != nil {
+		return nil, err
+	}
+
+	overlayPath := filepath.Join(configDir, filename)
+
+	cfg := &Config{
+		Shortcuts: make(map[string]interface{}),
+		Commands:  make(map[string]string),
+	}
+
+	if _, err := toml.DecodeFile(overlayPath, cfg); err != nil {
+		return nil, err
 	}
 
 	return cfg, nil

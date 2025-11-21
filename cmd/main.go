@@ -46,11 +46,24 @@ func startDaemon() {
 		os.Exit(1)
 	}
 
-	cfg, err := config.Load()
+	// Load enabled overlays
+	enabledOverlays, err := internal.ReadEnabledState()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to read enabled state: %v\n", err)
+		enabledOverlays = []string{}
+	}
+
+	// Load config with overlays
+	cfg, err := config.LoadWithOverlays(enabledOverlays)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Config error: %v\n", err)
 		internal.NotifyError("akeyshually startup failed", fmt.Sprintf("Config error: %v", err))
 		os.Exit(1)
+	}
+
+	// Print enabled overlays
+	if len(enabledOverlays) > 0 {
+		fmt.Printf("Enabled overlays: %v\n", enabledOverlays)
 	}
 
 	keyboardPairs, err := internal.FindKeyboards()
