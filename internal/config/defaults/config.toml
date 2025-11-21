@@ -1,4 +1,3 @@
-
 [settings]
 default_loop_interval = 100
 disable_media_keys = false  # Set to true to let system handle media keys (GNOME/KDE/etc.)
@@ -7,31 +6,27 @@ env_file = "~/.profile"
 
 [shortcuts]
 "super+k" = "edit_config"
+"ctrl+shift+k" = "kill_switch"
 
 #-[LAUNCHERS]--------------------------------
 
-"super.onrelease" = "rofi"
-"super+b" = "browser"
-"super+shift+b" = "browser2"
-"super+return" = "kitty"
-"super+f" = "dolphin"
-"super+x" = "xkill"
-"super+e" = "email"
-#"ctrl+alt+t" = "kitty"
-"super+v" = "copyq toggle"
-"super+w" = "whatsapp"
-"shift+super+n" = "notetaker"
+"super+enter" = "$TERMINAL"
+
+#-[WINDOW MANAGER]---------------------------
+
+"super+q" = "close_window"
+"super+x" = "kill_window"
+
+"super+1" = "workspace1"
+"super+2" = "workspace2"
+"super+3" = "workspace3"
+"super+4" = "workspace4"
 
 #-[UTILS]------------------------------------
 
-"print" = "prtscr"
-"super+p" = "prtscr"
-"shift+print" = "/home/user/Workspace/tools/bin/screenshot-save"
-"ctrl+print" = "bash -c \"xdg-open ~/Media/Pictures/temp.png\""
-"f9" = "yap"
+"f9" = "notify-send 'f9 pressed'"
+"102nd" = "notify-send '102nd pressed'"
 "ctrl+mute" = "mute_mic"
-
-"ctrl+shift+alt+h"="xdotool mousemove_relative 2 0"
 
 #-[MEDIA KEYS]-------------------------------
 
@@ -53,17 +48,6 @@ env_file = "~/.profile"
 [command_variables]#--------------------------
 
 edit_config = "kitty micro ~/.config/akeyshually/config.toml"
-
-browser = "brave-browser --user-data-dir=/home/user/.config/BraveSoftware/1"
-browser2 = "brave-browser --user-data-dir=/home/user/.config/BraveSoftware/2"
-dmenu = "bash -c \"compgen -c | dmenu | sh\""
-rofi = "~/.config/rofi/scripts/launcher_t7"
-email = "flatpak run org.mozilla.Thunderbird"
-mute_mic = "pactl set-source-mute @DEFAULT_SOURCE@ toggle"
-whatsapp = "flatpak run com.rtosta.zapzap"
-notetaker = "bash -c \"source ~/.bashrc && /home/user/.config/bash/bin/notetaker/notetaker\""
-prtscr = "/home/user/Workspace/tools/bin/screenshot-save --temp"
-
 
 #-[MEDIA COMMANDS]---------------------------
 

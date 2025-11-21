@@ -93,6 +93,7 @@ func restartSelf() {
 
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to restart: %v\n", err)
+		NotifyError("akeyshually reload failed", fmt.Sprintf("Failed to restart daemon: %v", err))
 		os.Exit(1)
 	}
 

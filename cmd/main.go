@@ -49,12 +49,20 @@ func startDaemon() {
 	cfg, err := config.Load()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Config error: %v\n", err)
+		internal.NotifyError("akeyshually startup failed", fmt.Sprintf("Config error: %v", err))
 		os.Exit(1)
 	}
 
 	keyboardPairs, err := internal.FindKeyboards()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Keyboard detection error: %v\n", err)
+		internal.NotifyError("akeyshually startup failed", fmt.Sprintf("Keyboard detection error: %v", err))
+		os.Exit(1)
+	}
+
+	if len(keyboardPairs) == 0 {
+		fmt.Fprintf(os.Stderr, "No keyboards detected\n")
+		internal.NotifyError("akeyshually startup failed", "No keyboards detected")
 		os.Exit(1)
 	}
 
