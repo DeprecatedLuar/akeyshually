@@ -29,8 +29,39 @@ func Parse(args []string) bool {
 	case "update":
 		commands.Update()
 		os.Exit(0)
+	case "enable":
+		if len(args) < 2 {
+			fmt.Fprintf(os.Stderr, "Usage: akeyshually enable <file.toml>\n")
+			os.Exit(1)
+		}
+		commands.Enable(args[1])
+		os.Exit(0)
+	case "disable":
+		if len(args) < 2 {
+			fmt.Fprintf(os.Stderr, "Usage: akeyshually disable <file.toml>\n")
+			os.Exit(1)
+		}
+		commands.Disable(args[1])
+		os.Exit(0)
+	case "list", "ls":
+		commands.List()
+		os.Exit(0)
+	case "clear":
+		commands.Clear()
+		os.Exit(0)
 	case "config", "conf", "edit":
-		commands.Config()
+		filename := ""
+		if len(args) > 1 {
+			filename = args[1]
+		}
+		commands.Config(filename)
+		os.Exit(0)
+	case "-e":
+		filename := ""
+		if len(args) > 1 {
+			filename = args[1]
+		}
+		commands.Config(filename)
 		os.Exit(0)
 	case "help", "-h", "--help":
 		commands.Help(args[1:]...)

@@ -42,7 +42,17 @@ func openInEditor(filePath string) {
 	}
 }
 
-// Config opens the config file in the editor
-func Config() {
-	openInEditor("~/.config/akeyshually/config.toml")
+// Config opens a config file in the editor
+func Config(filename string) {
+	if filename == "" {
+		filename = "config.toml"
+	}
+
+	// Add .toml extension if not present
+	if filepath.Ext(filename) == "" {
+		filename += ".toml"
+	}
+
+	configPath := filepath.Join("~/.config/akeyshually", filename)
+	openInEditor(configPath)
 }
