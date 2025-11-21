@@ -141,7 +141,10 @@ func (c *Config) Merge(overlay *Config) {
 		c.Commands[key] = value
 	}
 
-	// Settings are ignored - only base settings apply
+	// Merge default_loop_interval if overlay specifies one
+	if overlay.Settings.DefaultLoopInterval != 0 {
+		c.Settings.DefaultLoopInterval = overlay.Settings.DefaultLoopInterval
+	}
 
 	// Rebuild ParsedShortcuts after merge
 	c.ParsedShortcuts = make(map[string][]*ParsedShortcut)

@@ -30,9 +30,16 @@ func startDaemon() {
 		os.Exit(1)
 	}
 
+	// If we're replacing a specific PID (restart scenario), allow it
 	if pid > 0 {
-		fmt.Fprintf(os.Stderr, "Errm... akeyshually, the daemon is already running (PID: %d)\n", pid)
-		os.Exit(1)
+		replacingPid := os.Getenv("AKEYSHUALLY_REPLACING")
+		if replacingPid != "" && replacingPid == fmt.Sprintf("%d", pid) {
+			// This is expected - we're replacing the old daemon
+			// It might still be shutting down, just proceed
+		} else {
+			fmt.Fprintf(os.Stderr, "Errm... akeyshually, the daemon is already running (PID: %d)\n", pid)
+			os.Exit(1)
+		}
 	}
 
 	// Write PID file for current process

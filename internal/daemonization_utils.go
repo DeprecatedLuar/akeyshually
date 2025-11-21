@@ -10,6 +10,19 @@ import (
 	"syscall"
 )
 
+// NotifyError sends a desktop notification for critical errors
+// Fails silently if notify-send is not available
+func NotifyError(title, message string) {
+	cmd := exec.Command("notify-send", "-u", "critical", "-a", "akeyshually", title, message)
+	cmd.Run() // Fire and forget
+}
+
+// NotifyInfo sends a desktop notification for informational messages
+func NotifyInfo(title, message string) {
+	cmd := exec.Command("notify-send", "-u", "normal", "-a", "akeyshually", title, message)
+	cmd.Run() // Fire and forget
+}
+
 // GetPidFilePath returns the path to the pidfile
 func GetPidFilePath() (string, error) {
 	homeDir, err := os.UserHomeDir()
@@ -136,29 +149,39 @@ func GetRunningDaemonPid() (int, error) {
 	return 0, nil
 }
 
-// Daemonize forks the process to run in background
-func Daemonize() error {
-	// Get current executable path
+// SpawnDaemon spawns a detached daemon process
+// If replacingPid > 0, sets AKEYSHUALLY_REPLACING env to allow new daemon to start
+// Returns the PID of the spawned process
+// Used by: Daemonize(), Restart(), config watcher
+func SpawnDaemon(replacingPid int) (int, error) {
+	// Get current executable path and resolve symlinks
 	executable, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("failed to get executable path: %w", err)
+		return 0, fmt.Errorf("failed to get executable path: %w", err)
+	}
+
+	executable, err = filepath.EvalSymlinks(executable)
+	if err != nil {
+		return 0, fmt.Errorf("failed to resolve executable path: %w", err)
 	}
 
 	// Open /dev/null for stdin, stdout, stderr redirection
 	devNull, err := os.OpenFile("/dev/null", os.O_RDWR, 0)
 	if err != nil {
-		return fmt.Errorf("failed to open /dev/null: %w", err)
+		return 0, fmt.Errorf("failed to open /dev/null: %w", err)
 	}
 	defer devNull.Close()
 
-	// Fork and exec in background
-	// Use syscall.ForkExec to create detached process
-	args := []string{executable}
+	// Prepare environment - add AKEYSHUALLY_REPLACING if this is a restart
+	env := os.Environ()
+	if replacingPid > 0 {
+		env = append(env, fmt.Sprintf("AKEYSHUALLY_REPLACING=%d", replacingPid))
+	}
 
 	// Set up process attributes for daemonization
 	attr := &syscall.ProcAttr{
 		Dir: "/",
-		Env: os.Environ(),
+		Env: env,
 		Files: []uintptr{
 			devNull.Fd(), // stdin -> /dev/null
 			devNull.Fd(), // stdout -> /dev/null
@@ -169,9 +192,20 @@ func Daemonize() error {
 		},
 	}
 
-	pid, err := syscall.ForkExec(executable, args, attr)
+	// Fork and exec in background
+	pid, err := syscall.ForkExec(executable, []string{executable}, attr)
 	if err != nil {
-		return fmt.Errorf("failed to daemonize: %w", err)
+		return 0, fmt.Errorf("failed to spawn daemon: %w", err)
+	}
+
+	return pid, nil
+}
+
+// Daemonize forks the process to run in background
+func Daemonize() error {
+	pid, err := SpawnDaemon(0) // Not replacing anything
+	if err != nil {
+		return err
 	}
 
 	fmt.Printf("Errm... alright, the daemon started (PID: %d)\n", pid)

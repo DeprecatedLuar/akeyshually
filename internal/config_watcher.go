@@ -3,10 +3,8 @@ package internal
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -86,33 +84,15 @@ func Watch(configDir string) error {
 
 // restartSelf re-executes the current process and exits
 func restartSelf() {
-	executable, err := os.Executable()
+	// Spawn new daemon using shared spawning logic
+	// Pass 0 since we're exiting immediately after (no race)
+	_, err := SpawnDaemon(0)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to get executable path: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Resolve symlinks to get actual binary path
-	executable, err = filepath.EvalSymlinks(executable)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to resolve executable path: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Execute the same binary with the same arguments
-	cmd := exec.Command(executable, os.Args[1:]...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setsid: true, // Start in new session to detach from current process group
-	}
-
-	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to restart: %v\n", err)
 		NotifyError("akeyshually reload failed", fmt.Sprintf("Failed to restart daemon: %v", err))
 		os.Exit(1)
 	}
 
+	// Exit current daemon - new one is now running
 	os.Exit(0)
 }

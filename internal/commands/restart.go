@@ -4,24 +4,55 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"time"
+	"syscall"
+
+	"github.com/deprecatedluar/akeyshually/internal"
 )
 
 // Restart implements the restart command
 // Stops the daemon and then starts it again (silent operation)
 func Restart() {
-	// Stop (handles both systemd and manual mode) - suppress output
-	stopCmd := exec.Command(os.Args[0], "stop")
-	stopCmd.Run() // Ignore error and output - daemon might not be running
+	// Check if daemon is running via systemd
+	hasService, err := internal.HasSystemdService()
+	if err == nil && hasService {
+		// Let systemd handle the restart
+		cmd := exec.Command("systemctl", "--user", "restart", "akeyshually")
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to restart systemd service: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
 
-	// Wait briefly for process to fully exit
-	time.Sleep(200 * time.Millisecond)
-
-	// Start (handles both systemd and manual mode) - suppress output
-	startCmd := exec.Command(os.Args[0], "start")
-	if err := startCmd.Run(); err != nil {
-		// Only show error if start fails
-		fmt.Fprintf(os.Stderr, "Failed to restart daemon: %v\n", err)
+	// Manual mode: kill old daemon and spawn new one directly
+	// This is the same approach used by config_watcher.go:restartSelf()
+	pid, err := internal.GetRunningDaemonPid()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to check daemon status: %v\n", err)
 		os.Exit(1)
+	}
+
+	oldPid := pid
+	if pid > 0 {
+		// Kill the old daemon
+		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to stop daemon: %v\n", err)
+			os.Exit(1)
+		}
+		// Remove stale pidfile
+		internal.RemovePidFile()
+	}
+
+	// Spawn new daemon - pass old PID so it knows to replace it
+	// This tells startDaemon() to ignore "already running" check for that PID
+	newPid, err := internal.SpawnDaemon(oldPid)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to spawn daemon: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Write new pidfile
+	if err := internal.WritePidFile(newPid); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to write pidfile: %v\n", err)
 	}
 }
