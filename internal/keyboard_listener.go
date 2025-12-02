@@ -52,6 +52,13 @@ func FindKeyboards() ([]KeyboardPair, error) {
 			}
 		}
 
+		// Button devices (phone hardware buttons, media keys)
+		if isButtonDevice(dev) {
+			fmt.Fprintf(os.Stderr, "[DEBUG] Found button device: %s\n", name)
+			keyboards = append(keyboards, dev)
+			continue
+		}
+
 		// Physical keyboards need EV_REP
 		if isKeyboard(dev) {
 			fmt.Fprintf(os.Stderr, "[DEBUG] Found physical keyboard: %s\n", name)
@@ -112,6 +119,45 @@ func FindKeyboards() ([]KeyboardPair, error) {
 
 func isKeyboard(dev *evdev.InputDevice) bool {
 	return hasKeyCapability(dev) && hasRepCapability(dev) && hasAlphabetKeys(dev)
+}
+
+// isButtonDevice detects hardware buttons (volume, power) that send EV_KEY events
+// but lack EV_REP and full keyboard layout
+func isButtonDevice(dev *evdev.InputDevice) bool {
+	if !hasKeyCapability(dev) {
+		return false
+	}
+
+	// Button devices don't have key repeat
+	if hasRepCapability(dev) {
+		return false
+	}
+
+	capableKeys := dev.CapableEvents(evdev.EV_KEY)
+	if len(capableKeys) == 0 {
+		return false
+	}
+
+	keyMap := make(map[evdev.EvCode]bool)
+	for _, key := range capableKeys {
+		keyMap[key] = true
+	}
+
+	// Must have at least one button-type key
+	buttonKeys := []evdev.EvCode{
+		evdev.KEY_VOLUMEUP,
+		evdev.KEY_VOLUMEDOWN,
+		evdev.KEY_POWER,
+		evdev.KEY_MUTE,
+	}
+
+	for _, key := range buttonKeys {
+		if keyMap[key] {
+			return true
+		}
+	}
+
+	return false
 }
 
 func hasKeyCapability(dev *evdev.InputDevice) bool {
