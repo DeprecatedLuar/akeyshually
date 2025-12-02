@@ -40,11 +40,12 @@ const (
 )
 
 type ParsedShortcut struct {
-	KeyCombo string       // "super+k" (without suffix)
-	Behavior BehaviorMode
-	Timing   TimingMode
-	Interval float64  // Milliseconds (0 = use default)
-	Commands []string // Single command OR switch array
+	KeyCombo    string       // "super+k" (without suffix)
+	Behavior    BehaviorMode
+	Timing      TimingMode
+	Interval    float64  // Milliseconds (0 = use default)
+	Commands    []string // Single command OR switch array
+	Passthrough bool     // Ignore modifiers when matching
 }
 
 type Config struct {
@@ -235,10 +236,11 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 	}
 
 	shortcut := &ParsedShortcut{
-		KeyCombo: normalizeKeyCombo(parts[0]),
-		Behavior: BehaviorNormal,
-		Timing:   TimingPress,
-		Interval: 0, // 0 means use default
+		KeyCombo:    normalizeKeyCombo(parts[0]),
+		Behavior:    BehaviorNormal,
+		Timing:      TimingPress,
+		Interval:    0, // 0 means use default
+		Passthrough: false,
 	}
 
 	// Parse value (string or array)
@@ -292,6 +294,8 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 			shortcut.Timing = TimingRelease
 		case "onpress":
 			shortcut.Timing = TimingPress
+		case "passthrough":
+			shortcut.Passthrough = true
 		default:
 			return nil, fmt.Errorf("unknown modifier: %s", part)
 		}

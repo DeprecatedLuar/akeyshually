@@ -65,34 +65,47 @@ func CreateUnifiedHandler(m *Matcher, cfg *config.Config, loopState *LoopState) 
 				fmt.Fprintf(os.Stderr, "[DEBUG] Key press - combo: %q, code: %d\n", combo, code)
 			}
 
+			hasRelease := m.HasReleaseShortcut(combo)
+			pressMatched := false
+
 			// Check normal press shortcuts
 			if shortcut := m.CheckShortcut(combo, config.BehaviorNormal, config.TimingPress); shortcut != nil {
 				executeShortcut(shortcut, cfg, logging)
-				return true
+				pressMatched = true
 			}
 
 			// Check loop shortcuts (start loop)
-			if shortcut := m.CheckShortcut(combo, config.BehaviorLoop, config.TimingPress); shortcut != nil {
-				startLoop(combo, shortcut, cfg, loopState, logging)
-				return true
+			if !pressMatched {
+				if shortcut := m.CheckShortcut(combo, config.BehaviorLoop, config.TimingPress); shortcut != nil {
+					startLoop(combo, shortcut, cfg, loopState, logging)
+					pressMatched = true
+				}
 			}
 
 			// Check toggle shortcuts (start/stop loop)
-			if shortcut := m.CheckShortcut(combo, config.BehaviorToggle, config.TimingPress); shortcut != nil {
-				toggleLoop(combo, shortcut, cfg, m, loopState, logging)
-				return true
+			if !pressMatched {
+				if shortcut := m.CheckShortcut(combo, config.BehaviorToggle, config.TimingPress); shortcut != nil {
+					toggleLoop(combo, shortcut, cfg, m, loopState, logging)
+					pressMatched = true
+				}
 			}
 
 			// Check switch shortcuts (cycle command)
-			if shortcut := m.CheckShortcut(combo, config.BehaviorSwitch, config.TimingPress); shortcut != nil {
-				executeSwitchShortcut(combo, shortcut, m, cfg, logging)
-				return true
+			if !pressMatched {
+				if shortcut := m.CheckShortcut(combo, config.BehaviorSwitch, config.TimingPress); shortcut != nil {
+					executeSwitchShortcut(combo, shortcut, m, cfg, logging)
+					pressMatched = true
+				}
 			}
 
-			// Check if any release shortcuts exist (buffer key)
-			if m.HasReleaseShortcut(combo) {
+			// Buffer key if there's a release shortcut (regardless of press match)
+			if hasRelease {
 				bufferedKeys[code] = true
-				return true // Suppress
+			}
+
+			// Suppress if any shortcut matched (press or release)
+			if pressMatched || hasRelease {
+				return true
 			}
 
 			return false // Forward

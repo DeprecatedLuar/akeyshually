@@ -127,6 +127,9 @@ type Matcher struct {
 	state     ModifierState
 	shortcuts map[ShortcutKey]*config.ParsedShortcut
 
+	// Passthrough shortcuts (indexed by base key only, no modifiers)
+	passthroughShortcuts map[ShortcutKey]*config.ParsedShortcut
+
 	// Switch state (cycle through commands)
 	switchState map[string]int // "super+k.switch.press" -> next index
 	switchMutex sync.Mutex
@@ -147,6 +150,7 @@ type Matcher struct {
 
 func New(parsedShortcuts map[string][]*config.ParsedShortcut) *Matcher {
 	shortcuts := make(map[ShortcutKey]*config.ParsedShortcut)
+	passthroughShortcuts := make(map[ShortcutKey]*config.ParsedShortcut)
 	tapShortcuts := make(map[uint16]string)
 
 	// Build shortcut lookup map and extract tap shortcuts
@@ -157,7 +161,14 @@ func New(parsedShortcuts map[string][]*config.ParsedShortcut) *Matcher {
 				Behavior: shortcut.Behavior,
 				Timing:   shortcut.Timing,
 			}
-			shortcuts[key] = shortcut
+
+			if shortcut.Passthrough {
+				// Store in passthrough map (combo should be base key only)
+				passthroughShortcuts[key] = shortcut
+			} else {
+				// Store in regular map
+				shortcuts[key] = shortcut
+			}
 
 			// Check for tap shortcuts (lone modifiers with .onrelease)
 			if shortcut.Timing == config.TimingRelease && len(shortcut.Commands) == 1 {
@@ -181,11 +192,12 @@ func New(parsedShortcuts map[string][]*config.ParsedShortcut) *Matcher {
 	}
 
 	return &Matcher{
-		shortcuts:    shortcuts,
-		switchState:  make(map[string]int),
-		toggleState:  make(map[string]context.CancelFunc),
-		tapShortcuts: tapShortcuts,
-		tapState:     nil, // Set via SetTapState() if needed
+		shortcuts:            shortcuts,
+		passthroughShortcuts: passthroughShortcuts,
+		switchState:          make(map[string]int),
+		toggleState:          make(map[string]context.CancelFunc),
+		tapShortcuts:         tapShortcuts,
+		tapState:             nil, // Set via SetTapState() if needed
 	}
 }
 
@@ -196,21 +208,57 @@ func (m *Matcher) SetTapState(ts *TapState) {
 
 // CheckShortcut checks if a shortcut exists with given combo, behavior, and timing
 func (m *Matcher) CheckShortcut(combo string, behavior config.BehaviorMode, timing config.TimingMode) *config.ParsedShortcut {
+	// First check exact match in regular shortcuts
 	key := ShortcutKey{
 		Combo:    combo,
 		Behavior: behavior,
 		Timing:   timing,
 	}
-	return m.shortcuts[key]
+	if shortcut := m.shortcuts[key]; shortcut != nil {
+		return shortcut
+	}
+
+	// Then check passthrough shortcuts (strip modifiers, match base key only)
+	baseKey := extractBaseKey(combo)
+	passthroughKey := ShortcutKey{
+		Combo:    baseKey,
+		Behavior: behavior,
+		Timing:   timing,
+	}
+	if shortcut := m.passthroughShortcuts[passthroughKey]; shortcut != nil {
+		return shortcut
+	}
+
+	return nil
+}
+
+// extractBaseKey returns the last component of a combo (the non-modifier key)
+// Example: "shift+ctrl+kp6" -> "kp6"
+func extractBaseKey(combo string) string {
+	parts := strings.Split(combo, "+")
+	if len(parts) == 0 {
+		return combo
+	}
+	return parts[len(parts)-1]
 }
 
 // HasReleaseShortcut checks if any release shortcuts exist for a combo
 func (m *Matcher) HasReleaseShortcut(combo string) bool {
+	// Check regular shortcuts
 	for key := range m.shortcuts {
 		if key.Combo == combo && key.Timing == config.TimingRelease {
 			return true
 		}
 	}
+
+	// Check passthrough shortcuts (with base key)
+	baseKey := extractBaseKey(combo)
+	for key := range m.passthroughShortcuts {
+		if key.Combo == baseKey && key.Timing == config.TimingRelease {
+			return true
+		}
+	}
+
 	return false
 }
 
