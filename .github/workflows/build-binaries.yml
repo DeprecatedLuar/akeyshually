@@ -18,7 +18,7 @@ jobs:
       BINARY_NAME: "akeyshually"
       GO_MODULE_PATH: "github.com/DeprecatedLuar/the-satellite/the-lib"  # Satellite library handles version
       VERSION_VAR_PATH: "Version"                     # Version variable in satellite library
-      MAIN_GO_FILE: "cmd/main.go"                     # Path to main.go entry point
+      MAIN_GO_FILE: "akeyshually/main.go"              # Path to main.go entry point
     steps:
     - uses: actions/checkout@v4
 

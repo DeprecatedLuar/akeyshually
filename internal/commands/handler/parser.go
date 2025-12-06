@@ -4,17 +4,31 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/deprecatedluar/akeyshually/internal"
 	"github.com/deprecatedluar/akeyshually/internal/commands"
 )
 
 // Parse handles all CLI argument parsing and command execution
 // Returns true if foreground mode should run, false if command was handled
 func Parse(args []string) bool {
-	if len(args) == 0 {
+	// Process flags first, collect remaining args
+	var remaining []string
+	for _, arg := range args {
+		switch arg {
+		case "--debug", "-d":
+			internal.DebugEnabled = true
+		case "--logging", "-l":
+			internal.LoggingEnabled = true
+		default:
+			remaining = append(remaining, arg)
+		}
+	}
+
+	if len(remaining) == 0 {
 		return true // Run in foreground
 	}
 
-	command := args[0]
+	command := remaining[0]
 
 	switch command {
 	case "start":
@@ -30,18 +44,18 @@ func Parse(args []string) bool {
 		commands.Update()
 		os.Exit(0)
 	case "enable":
-		if len(args) < 2 {
+		if len(remaining) < 2 {
 			fmt.Fprintf(os.Stderr, "Usage: akeyshually enable <file.toml>\n")
 			os.Exit(1)
 		}
-		commands.Enable(args[1])
+		commands.Enable(remaining[1])
 		os.Exit(0)
 	case "disable":
-		if len(args) < 2 {
+		if len(remaining) < 2 {
 			fmt.Fprintf(os.Stderr, "Usage: akeyshually disable <file.toml>\n")
 			os.Exit(1)
 		}
-		commands.Disable(args[1])
+		commands.Disable(remaining[1])
 		os.Exit(0)
 	case "list", "ls":
 		commands.List()
@@ -51,20 +65,20 @@ func Parse(args []string) bool {
 		os.Exit(0)
 	case "config", "conf", "edit":
 		filename := ""
-		if len(args) > 1 {
-			filename = args[1]
+		if len(remaining) > 1 {
+			filename = remaining[1]
 		}
 		commands.Config(filename)
 		os.Exit(0)
 	case "-e":
 		filename := ""
-		if len(args) > 1 {
-			filename = args[1]
+		if len(remaining) > 1 {
+			filename = remaining[1]
 		}
 		commands.Config(filename)
 		os.Exit(0)
 	case "help", "-h", "--help":
-		commands.Help(args[1:]...)
+		commands.Help(remaining[1:]...)
 		os.Exit(0)
 	case "version", "-v", "--version":
 		commands.Version()

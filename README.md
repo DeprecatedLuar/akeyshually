@@ -52,7 +52,7 @@ curl -sSL https://raw.githubusercontent.com/DeprecatedLuar/akeyshually/main/inst
 # Build from source
 git clone https://github.com/DeprecatedLuar/akeyshually.git
 cd akeyshually
-go build -ldflags="-s -w" -o akeyshually ./cmd
+go build -ldflags="-s -w" -o akeyshually ./akeyshually
 
 # Install to ~/.local/bin
 ./other/install-local.sh
