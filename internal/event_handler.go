@@ -282,7 +282,13 @@ func executeReleaseShortcuts(combo string, m *Matcher, cfg *config.Config, loggi
 	}
 }
 
+var DebugEnabled bool
+var LoggingEnabled bool
+
 func isLoggingEnabled() bool {
-	val := os.Getenv("LOGGING")
-	return val == "1" || val == "true" || val == "yes"
+	return LoggingEnabled
+}
+
+func IsDebugEnabled() bool {
+	return DebugEnabled
 }

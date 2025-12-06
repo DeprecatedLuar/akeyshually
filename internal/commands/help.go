@@ -40,6 +40,10 @@ func Help(args ...string) {
 	gohelp.Item("akeyshually help [topic]", "Show this help message")
 	gohelp.Item("akeyshually version", "Show version information")
 
+	fmt.Println("\nFlags:")
+	gohelp.Item("--debug, -d", "Show device detection and verbose output")
+	gohelp.Item("--logging, -l", "Show shortcut execution logging")
+
 	fmt.Println("\nHelp Topics:")
 	gohelp.Item("akeyshually help config", "Configuration file documentation")
 	gohelp.Item("akeyshually help overlays", "Config overlay system documentation")
@@ -85,9 +89,6 @@ func HelpConfig() {
 	fmt.Println(gohelp.Header("Auto-Reload"))
 	gohelp.Paragraph("Config file is automatically reloaded when modified (no restart needed)")
 
-	// Environment
-	fmt.Println(gohelp.Header("Environment Variables"))
-	gohelp.Item("LOGGING=1", "Enable shortcut execution logging to stderr")
 }
 
 // HelpOverlays displays config overlay system documentation
