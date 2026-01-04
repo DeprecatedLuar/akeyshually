@@ -7,7 +7,7 @@ BINARY_NAME="akeyshually"
 REPO_USER="DeprecatedLuar"
 REPO_NAME="akeyshually"
 INSTALL_DIR="$HOME/.local/bin"
-BUILD_CMD="go build -ldflags='-s -w' -o akeyshually ./akeyshually"
+BUILD_CMD="go build -ldflags='-s -w' -o akeyshually ./cmd/akeyshually"
 
 MSG_FINAL="Big hug from Luar"
 NEXT_STEPS="Errm... Try running: akeyshually --help|Config will be auto-generated in ~/.config/akeyshually/ on first run|Actually... add your user to the input group: sudo usermod -aG input \$USER"
