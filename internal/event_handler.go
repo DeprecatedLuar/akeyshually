@@ -42,7 +42,48 @@ func CreateUnifiedHandler(m *Matcher, cfg *config.Config, loopState *LoopState) 
 					m.MarkTapCandidate(code)
 				}
 			} else if value == 0 {
-				// Modifier released - check tap
+				// Modifier released
+
+				// Check for double-tap (highest priority)
+				if m.HasDoubleTapShortcut(code) {
+					doubleTapState := m.GetDoubleTapState()
+					if doubleTapState != nil {
+						// Check if this is a second tap
+						if doubleTapState.CheckSecondTap(code) {
+							// Second tap within window - execute doubletap, cancel timer
+							doubleTapState.CancelTimer()
+
+							if shortcut := m.GetDoubleTapShortcut(code); shortcut != nil {
+								resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
+								if logging {
+									fmt.Fprintf(os.Stderr, "[SHORTCUT DOUBLETAP] %s\n", resolvedCmd)
+								}
+								Execute(resolvedCmd, cfg)
+							}
+							m.UpdateModifierState(code, false)
+							return false // Forward modifier
+						} else {
+							// First tap - start timer
+							shortcut := m.GetDoubleTapShortcut(code)
+							interval := shortcut.Interval
+
+							doubleTapState.StartTimer(code, interval, func() {
+								// Timeout - check if .onrelease exists and execute
+								if command, hasTap := m.CheckTap(code); hasTap {
+									resolvedCmd := cfg.ResolveCommand(command)
+									if logging {
+										fmt.Fprintf(os.Stderr, "[SHORTCUT TAP] %s\n", resolvedCmd)
+									}
+									Execute(resolvedCmd, cfg)
+								}
+							})
+							m.UpdateModifierState(code, false)
+							return false // Forward modifier
+						}
+					}
+				}
+
+				// Check regular tap (only if no doubletap)
 				if command, matched := m.CheckTap(code); matched {
 					resolvedCmd := cfg.ResolveCommand(command)
 					if logging {
