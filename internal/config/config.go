@@ -30,6 +30,7 @@ const (
 	BehaviorLoop
 	BehaviorToggle
 	BehaviorSwitch
+	BehaviorDoubleTap
 )
 
 type TimingMode int
@@ -262,7 +263,7 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 	}
 
 	// Parse modifiers (behavior and timing)
-	intervalRegex := regexp.MustCompile(`^(loop|whileheld|toggle)\((\d+\.?\d*|\d*\.\d+)\)$`)
+	intervalRegex := regexp.MustCompile(`^(loop|whileheld|toggle|doubletap)\((\d+\.?\d*|\d*\.\d+)\)$`)
 
 	for i := 1; i < len(parts); i++ {
 		part := strings.ToLower(parts[i])
@@ -277,6 +278,8 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 				shortcut.Behavior = BehaviorLoop
 			case "toggle":
 				shortcut.Behavior = BehaviorToggle
+			case "doubletap":
+				shortcut.Behavior = BehaviorDoubleTap
 			}
 			shortcut.Interval = normalizeInterval(interval)
 			continue
@@ -290,6 +293,11 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 			shortcut.Behavior = BehaviorToggle
 		case "switch":
 			shortcut.Behavior = BehaviorSwitch
+		case "doubletap":
+			shortcut.Behavior = BehaviorDoubleTap
+			if shortcut.Interval == 0 {
+				shortcut.Interval = 300 // Default 300ms
+			}
 		case "onrelease":
 			shortcut.Timing = TimingRelease
 		case "onpress":
@@ -312,6 +320,17 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 		}
 	}
 
+	// Validate doubletap is modifier-only
+	if shortcut.Behavior == BehaviorDoubleTap {
+		normalized := strings.ToLower(shortcut.KeyCombo)
+		if normalized != "super" && normalized != "ctrl" && normalized != "alt" && normalized != "shift" {
+			return nil, fmt.Errorf("doubletap behavior only allowed on modifier keys (super, ctrl, alt, shift)")
+		}
+		if shortcut.Interval == 0 {
+			shortcut.Interval = 300 // Default timeout
+		}
+	}
+
 	return shortcut, nil
 }
 
@@ -325,6 +344,8 @@ func behaviorName(b BehaviorMode) string {
 		return "toggle"
 	case BehaviorSwitch:
 		return "switch"
+	case BehaviorDoubleTap:
+		return "doubletap"
 	default:
 		return "unknown"
 	}

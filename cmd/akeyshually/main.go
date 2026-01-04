@@ -96,10 +96,15 @@ func startDaemon() {
 
 	// Create shared tap state and detect mice (if tap shortcuts exist)
 	var tapState *internal.TapState
+	var doubleTapState *internal.DoubleTapState
 	mice, err := internal.FindMice()
 	if err == nil && len(mice) > 0 {
 		tapState = internal.NewTapState()
 		m.SetTapState(tapState)
+
+		doubleTapState = internal.NewDoubleTapState()
+		m.SetDoubleTapState(doubleTapState)
+
 		fmt.Printf("Monitoring %d mouse device(s) for tap cancellation\n", len(mice))
 	}
 
@@ -146,6 +151,9 @@ func startDaemon() {
 				defer wg.Done()
 				if err := internal.ListenMouse(&dev, func() {
 					tapState.Clear()
+					if doubleTapState != nil {
+						doubleTapState.Clear()
+					}
 				}); err != nil {
 					fmt.Fprintf(os.Stderr, "Mouse listener error: %v\n", err)
 				}

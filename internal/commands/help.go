@@ -18,6 +18,9 @@ func Help(args ...string) {
 		case "overlays", "overlay":
 			HelpOverlays()
 			return
+		case "modifiers", "syntax", "behaviors":
+			HelpModifiers()
+			return
 		default:
 			fmt.Fprintf(os.Stderr, "Unknown help topic: %s\n\n", args[0])
 		}
@@ -41,11 +44,11 @@ func Help(args ...string) {
 	gohelp.Item("akeyshually version", "Show version information")
 
 	fmt.Println("\nFlags:")
-	gohelp.Item("--debug, -d", "Show device detection and verbose output")
-	gohelp.Item("--logging, -l", "Show shortcut execution logging")
+	gohelp.Item("--debug", "Show device detection and verbose output")
 
 	fmt.Println("\nHelp Topics:")
 	gohelp.Item("akeyshually help config", "Configuration file documentation")
+	gohelp.Item("akeyshually help modifiers", "Shortcut modifiers and syntax reference")
 	gohelp.Item("akeyshually help overlays", "Config overlay system documentation")
 
 	gohelp.Paragraph("Config: ~/.config/akeyshually/")
@@ -121,5 +124,66 @@ func HelpOverlays() {
 	fmt.Println(gohelp.Header("Settings"))
 	gohelp.Item("notify_on_overlay_change", "Desktop notifications when overlays change (default: false)")
 	gohelp.Paragraph("Enable in config.toml:\n  [settings]\n  notify_on_overlay_change = true")
+}
+
+// HelpModifiers displays shortcut modifier and syntax documentation
+func HelpModifiers() {
+	gohelp.PrintHeader("Shortcut Modifiers and Syntax")
+
+	gohelp.Paragraph("Modifiers control when and how shortcuts execute. Add them after the key combo using dot notation.")
+
+	// Timing Modifiers
+	fmt.Println(gohelp.Header("Timing Modifiers"))
+	gohelp.Item(".onpress", "Execute on key press (default, can be omitted)")
+	gohelp.Item("", "  Example: \"super+t\" = \"terminal\"")
+
+	gohelp.Item(".onrelease", "Execute on key release (tap detection)")
+	gohelp.Item("", "  Example: \"super.onrelease\" = \"rofi\"")
+	gohelp.Item("", "  • Perfect for modifier-only shortcuts (tap Super to launch rofi)")
+	gohelp.Item("", "  • Cancelled if other keys pressed while holding modifier")
+	gohelp.Item("", "  • Cancelled if mouse clicked while holding modifier")
+
+	// Behavior Modifiers
+	fmt.Println(gohelp.Header("Behavior Modifiers"))
+	gohelp.Item(".loop(interval)", "Repeat command while key held (alias: .whileheld)")
+	gohelp.Item("", "  Example: \"super+k.loop(100)\" = \"volume_up\"")
+	gohelp.Item("", "  • Interval in milliseconds (omit for default_loop_interval)")
+	gohelp.Item("", "  • Executes continuously until key released")
+	gohelp.Item("", "  • Float intervals supported: .loop(0.015) = 15ms")
+
+	gohelp.Item(".toggle(interval)", "Start/stop loop on each press")
+	gohelp.Item("", "  Example: \"f1.toggle(50)\" = \"spam_command\"")
+	gohelp.Item("", "  • First press starts loop, second press stops it")
+	gohelp.Item("", "  • Loop continues even after key released")
+	gohelp.Item("", "  • Useful for auto-clickers or continuous actions")
+
+	gohelp.Item(".switch", "Cycle through array of commands")
+	gohelp.Item("", "  Example: \"f2.switch\" = [\"cmd1\", \"cmd2\", \"cmd3\"]")
+	gohelp.Item("", "  • Each press executes next command in array")
+	gohelp.Item("", "  • Wraps around to first command after last")
+	gohelp.Item("", "  • Requires array of at least 2 commands")
+
+	gohelp.Item(".doubletap(interval)", "Execute on double-tap of modifier key")
+	gohelp.Item("", "  Example: \"super.doubletap(300)\" = \"notify-send hello\"")
+	gohelp.Item("", "  • Only works on modifier keys: super, ctrl, alt, shift")
+	gohelp.Item("", "  • First tap starts timer, second tap within interval executes")
+	gohelp.Item("", "  • If timeout expires, checks for .onrelease shortcut")
+	gohelp.Item("", "  • Can combine with .onrelease for single/double tap actions")
+	gohelp.Item("", "  • Cancelled by mouse clicks")
+
+	gohelp.Item(".passthrough", "Execute shortcut without consuming modifiers")
+	gohelp.Item("", "  Example: \"v.passthrough\" = \"copyq toggle\"")
+	gohelp.Item("", "  • Modifier state ignored when matching")
+	gohelp.Item("", "  • Super+V and Ctrl+V both trigger \"v.passthrough\"")
+	gohelp.Item("", "  • Useful for shortcuts that work with any modifier combo")
+
+	// Combining Modifiers
+	fmt.Println(gohelp.Header("Combining Modifiers"))
+	gohelp.Paragraph("Most modifiers can be combined:\n  \"super+k.loop(100).onrelease\" = \"command\"\n  \"f1.toggle(50).onpress\" = \"command\"")
+	gohelp.Paragraph("Restrictions:\n  • .doubletap only works on lone modifiers (no key combos)\n  • .switch requires command array, others require single command")
+
+	// Examples
+	fmt.Println(gohelp.Header("Complete Examples"))
+	gohelp.Paragraph("[shortcuts]\n# Basic shortcuts\n\"super+t\" = \"terminal\"                    # Execute on press\n\"super.onrelease\" = \"rofi\"                # Tap Super for rofi\n\n# Double-tap detection\n\"super.onrelease\" = \"rofi\"\n\"super.doubletap(200)\" = \"launcher\"       # Double-tap within 200ms\n\n# Loops and repeats\n\"super+up.loop(100)\" = \"volume_up\"        # Hold to repeat\n\"f1.toggle(50)\" = \"spam_click\"           # Toggle auto-repeat\n\n# Cycling commands\n\"f2.switch\" = [\"mode1\", \"mode2\", \"mode3\"]  # Cycle on each press\n\n# Passthrough\n\"v.passthrough\" = \"clipboard_manager\"     # Works with any modifiers")
 }
 
