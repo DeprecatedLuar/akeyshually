@@ -24,6 +24,7 @@ func FindKeyboards() ([]KeyboardPair, error) {
 
 	var remappers []*evdev.InputDevice
 	var keyboards []*evdev.InputDevice
+	var buttonDevices []*evdev.InputDevice
 
 	debug := IsDebugEnabled()
 	if debug {
@@ -62,7 +63,7 @@ func FindKeyboards() ([]KeyboardPair, error) {
 			if debug {
 				fmt.Fprintf(os.Stderr, "[DEBUG] Found button device: %s\n", name)
 			}
-			keyboards = append(keyboards, dev)
+			buttonDevices = append(buttonDevices, dev)
 			continue
 		}
 
@@ -79,17 +80,18 @@ func FindKeyboards() ([]KeyboardPair, error) {
 	}
 
 	// Prefer remapper virtual keyboards (keyd/kanata grab physical ones)
+	// Button devices are always included (they handle independent keys like brightness)
 	var devicesToGrab []*evdev.InputDevice
 	if len(remappers) > 0 {
 		for _, dev := range keyboards {
 			dev.Close()
 		}
-		devicesToGrab = remappers
+		devicesToGrab = append(remappers, buttonDevices...)
 	} else {
-		if len(keyboards) == 0 {
+		if len(keyboards) == 0 && len(buttonDevices) == 0 {
 			return nil, fmt.Errorf("no keyboards detected")
 		}
-		devicesToGrab = keyboards
+		devicesToGrab = append(keyboards, buttonDevices...)
 	}
 
 	// Grab and clone each keyboard
@@ -158,6 +160,8 @@ func isButtonDevice(dev *evdev.InputDevice) bool {
 		evdev.KEY_VOLUMEDOWN,
 		evdev.KEY_POWER,
 		evdev.KEY_MUTE,
+		evdev.KEY_BRIGHTNESSUP,
+		evdev.KEY_BRIGHTNESSDOWN,
 	}
 
 	for _, key := range buttonKeys {
