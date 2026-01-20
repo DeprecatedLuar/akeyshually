@@ -16,7 +16,7 @@ import (
 var embeddedConfigs embed.FS
 
 type Settings struct {
-	DefaultLoopInterval   float64 `toml:"default_loop_interval"`    // >= 10 = milliseconds, < 10 = seconds (default: 100)
+	DefaultInterval float64 `toml:"default_interval"` // >= 10 = milliseconds, < 10 = seconds (default: 100)
 	DisableMediaKeys      bool    `toml:"disable_media_keys"`       // Forward media keys to system (default: false)
 	Shell                 string  `toml:"shell"`                    // Optional: override $SHELL
 	EnvFile               string  `toml:"env_file"`                 // Optional: source before commands
@@ -93,10 +93,10 @@ func Load() (*Config, error) {
 	}
 
 	// Set default loop interval if not specified
-	if cfg.Settings.DefaultLoopInterval == 0 {
-		cfg.Settings.DefaultLoopInterval = 100
+	if cfg.Settings.DefaultInterval == 0 {
+		cfg.Settings.DefaultInterval = 150
 	} else {
-		cfg.Settings.DefaultLoopInterval = normalizeInterval(cfg.Settings.DefaultLoopInterval)
+		cfg.Settings.DefaultInterval = normalizeInterval(cfg.Settings.DefaultInterval)
 	}
 
 	// Parse shortcuts
@@ -144,8 +144,8 @@ func (c *Config) Merge(overlay *Config) {
 	}
 
 	// Merge default_loop_interval if overlay specifies one
-	if overlay.Settings.DefaultLoopInterval != 0 {
-		c.Settings.DefaultLoopInterval = overlay.Settings.DefaultLoopInterval
+	if overlay.Settings.DefaultInterval != 0 {
+		c.Settings.DefaultInterval = overlay.Settings.DefaultInterval
 	}
 
 	// Rebuild ParsedShortcuts after merge
@@ -295,9 +295,6 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 			shortcut.Behavior = BehaviorSwitch
 		case "doubletap":
 			shortcut.Behavior = BehaviorDoubleTap
-			if shortcut.Interval == 0 {
-				shortcut.Interval = 300 // Default 300ms
-			}
 		case "onrelease":
 			shortcut.Timing = TimingRelease
 		case "onpress":
@@ -317,17 +314,6 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 	} else {
 		if len(shortcut.Commands) != 1 {
 			return nil, fmt.Errorf("%s behavior requires single command string", behaviorName(shortcut.Behavior))
-		}
-	}
-
-	// Validate doubletap is modifier-only
-	if shortcut.Behavior == BehaviorDoubleTap {
-		normalized := strings.ToLower(shortcut.KeyCombo)
-		if normalized != "super" && normalized != "ctrl" && normalized != "alt" && normalized != "shift" {
-			return nil, fmt.Errorf("doubletap behavior only allowed on modifier keys (super, ctrl, alt, shift)")
-		}
-		if shortcut.Interval == 0 {
-			shortcut.Interval = 300 // Default timeout
 		}
 	}
 

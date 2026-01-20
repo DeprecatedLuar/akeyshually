@@ -26,10 +26,7 @@ func FindKeyboards() ([]KeyboardPair, error) {
 	var keyboards []*evdev.InputDevice
 	var buttonDevices []*evdev.InputDevice
 
-	debug := IsDebugEnabled()
-	if debug {
-		fmt.Fprintf(os.Stderr, "[DEBUG] Scanning %d input devices...\n", len(paths))
-	}
+	LogDebug("Scanning %d input devices...", len(paths))
 
 	for _, path := range paths {
 		dev, err := evdev.Open(path.Path)
@@ -49,9 +46,7 @@ func FindKeyboards() ([]KeyboardPair, error) {
 		if isRemapperVirtual(dev) {
 			hasKey := hasKeyCapability(dev)
 			hasAlpha := hasAlphabetKeys(dev)
-			if debug {
-				fmt.Fprintf(os.Stderr, "[DEBUG] Found remapper: %s (hasKey=%v, hasAlpha=%v)\n", name, hasKey, hasAlpha)
-			}
+			LogDebug("Found remapper: %s (hasKey=%v, hasAlpha=%v)", name, hasKey, hasAlpha)
 			if hasKey && hasAlpha {
 				remappers = append(remappers, dev)
 				continue
@@ -60,18 +55,14 @@ func FindKeyboards() ([]KeyboardPair, error) {
 
 		// Button devices (phone hardware buttons, media keys)
 		if isButtonDevice(dev) {
-			if debug {
-				fmt.Fprintf(os.Stderr, "[DEBUG] Found button device: %s\n", name)
-			}
+			LogDebug("Found button device: %s", name)
 			buttonDevices = append(buttonDevices, dev)
 			continue
 		}
 
 		// Physical keyboards need EV_REP
 		if isKeyboard(dev) {
-			if debug {
-				fmt.Fprintf(os.Stderr, "[DEBUG] Found physical keyboard: %s\n", name)
-			}
+			LogDebug("Found physical keyboard: %s", name)
 			keyboards = append(keyboards, dev)
 			continue
 		}
@@ -286,9 +277,7 @@ func FindMice() ([]*evdev.InputDevice, error) {
 
 		// Mice have EV_KEY + mouse buttons but no EV_REP
 		if isMouse(dev) {
-			if IsDebugEnabled() {
-				fmt.Fprintf(os.Stderr, "[DEBUG] Found mouse: %s\n", name)
-			}
+			LogDebug("Found mouse: %s", name)
 			mice = append(mice, dev)
 			continue
 		}

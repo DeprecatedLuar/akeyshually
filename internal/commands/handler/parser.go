@@ -16,8 +16,7 @@ func Parse(args []string) bool {
 	for _, arg := range args {
 		switch arg {
 		case "--debug":
-			internal.DebugEnabled = true
-			internal.LoggingEnabled = true // Enable shortcut logging with debug
+			internal.SetDebug(true)
 		default:
 			remaining = append(remaining, arg)
 		}
