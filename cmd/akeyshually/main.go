@@ -111,18 +111,6 @@ func startDaemon() {
 	// Create shared loop state
 	loopState := internal.NewLoopState()
 
-	// Start config file watcher for automatic reload
-	configDir, err := config.GetConfigDir()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to get config directory: %v\n", err)
-		os.Exit(1)
-	}
-	go func() {
-		if err := internal.Watch(configDir); err != nil {
-			fmt.Fprintf(os.Stderr, "Watcher error: %v\n", err)
-		}
-	}()
-
 	// Signal handling for cleanup
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
