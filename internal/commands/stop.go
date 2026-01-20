@@ -24,6 +24,7 @@ func Stop() {
 			fmt.Fprintf(os.Stderr, "Failed to stop systemd service: %v\n", err)
 		} else {
 			fmt.Println("Stopped systemd service")
+			internal.NotifyInfo("akeyshually", "Daemon stopped")
 			stopped = true
 		}
 	}
@@ -42,6 +43,7 @@ func Stop() {
 				fmt.Fprintf(os.Stderr, "Warning: failed to remove pidfile: %v\n", err)
 			}
 			fmt.Printf("Stopped manual daemon (PID: %d)\n", pid)
+			internal.NotifyInfo("akeyshually", "Daemon stopped")
 			stopped = true
 		}
 	}
