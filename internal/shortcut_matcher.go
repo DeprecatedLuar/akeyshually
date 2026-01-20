@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -67,11 +68,19 @@ func init() {
 		codeToNameMap[code] = name
 	}
 
-	// Override with canonical names (preferred)
+	// Override with canonical names (preferred) and add modifiers
 	canonicalOverrides := map[uint16]string{
-		evdev.KEY_ENTER: "return",
-		evdev.KEY_ESC:   "esc",
-		evdev.KEY_SYSRQ: "print",
+		evdev.KEY_ENTER:      "return",
+		evdev.KEY_ESC:        "esc",
+		evdev.KEY_SYSRQ:      "print",
+		evdev.KEY_LEFTMETA:   "super",
+		evdev.KEY_RIGHTMETA:  "super",
+		evdev.KEY_LEFTCTRL:   "ctrl",
+		evdev.KEY_RIGHTCTRL:  "ctrl",
+		evdev.KEY_LEFTALT:    "alt",
+		evdev.KEY_RIGHTALT:   "alt",
+		evdev.KEY_LEFTSHIFT:  "shift",
+		evdev.KEY_RIGHTSHIFT: "shift",
 	}
 	for code, name := range canonicalOverrides {
 		codeToNameMap[code] = name
@@ -266,9 +275,10 @@ func New(parsedShortcuts map[string][]*config.ParsedShortcut) *Matcher {
 				}
 			}
 
-			// Check for double-tap shortcuts (lone modifiers with .doubletap)
+			// Check for double-tap shortcuts (any key with .doubletap)
 			if shortcut.Behavior == config.BehaviorDoubleTap {
 				normalized := strings.ToLower(shortcut.KeyCombo)
+				// Handle modifier names that map to left/right variants
 				switch normalized {
 				case "super":
 					doubleTapShortcuts[evdev.KEY_LEFTMETA] = shortcut
@@ -282,6 +292,11 @@ func New(parsedShortcuts map[string][]*config.ParsedShortcut) *Matcher {
 				case "shift":
 					doubleTapShortcuts[evdev.KEY_LEFTSHIFT] = shortcut
 					doubleTapShortcuts[evdev.KEY_RIGHTSHIFT] = shortcut
+				default:
+					// Any other key
+					if keyCode := getKeyCode(normalized); keyCode != 0 {
+						doubleTapShortcuts[keyCode] = shortcut
+					}
 				}
 			}
 		}
@@ -428,6 +443,38 @@ func (m *Matcher) GetCurrentCombo(code uint16) string {
 	return m.comboBuilder.String()
 }
 
+// GetComboCodes returns the keycodes for the current combo as a string like "125+28"
+func (m *Matcher) GetComboCodes(code uint16) string {
+	// Fast path: no modifiers
+	if !m.state.Super && !m.state.Ctrl && !m.state.Alt && !m.state.Shift {
+		return fmt.Sprintf("%d", code)
+	}
+
+	var codes []string
+	if m.state.Super {
+		codes = append(codes, fmt.Sprintf("%d", evdev.KEY_LEFTMETA))
+	}
+	if m.state.Ctrl {
+		codes = append(codes, fmt.Sprintf("%d", evdev.KEY_LEFTCTRL))
+	}
+	if m.state.Alt {
+		codes = append(codes, fmt.Sprintf("%d", evdev.KEY_LEFTALT))
+	}
+	if m.state.Shift {
+		codes = append(codes, fmt.Sprintf("%d", evdev.KEY_LEFTSHIFT))
+	}
+	codes = append(codes, fmt.Sprintf("%d", code))
+
+	result := ""
+	for i, c := range codes {
+		if i > 0 {
+			result += "+"
+		}
+		result += c
+	}
+	return result
+}
+
 func (m *Matcher) updateModifierState(code uint16, pressed bool) {
 	switch code {
 	case evdev.KEY_LEFTMETA, evdev.KEY_RIGHTMETA:
@@ -534,6 +581,6 @@ func getKeyCode(name string) uint16 {
 	return 0
 }
 
-func getKeyName(code uint16) string {
+func GetKeyName(code uint16) string {
 	return codeToNameMap[code]
 }

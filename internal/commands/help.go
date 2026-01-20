@@ -62,13 +62,13 @@ func HelpConfig() {
 
 	// Settings section
 	fmt.Println(gohelp.Header("[settings]"))
-	gohelp.Item("default_loop_interval", "Default interval for .loop/.toggle behaviors (milliseconds, default: 100)")
+	gohelp.Item("default_interval", "Default interval for .loop/.toggle behaviors (milliseconds, default: 100)")
 	gohelp.Item("disable_media_keys", "Forward media keys to system (default: false)")
 	gohelp.Item("", "  • Set to true when using GNOME/KDE media key daemons")
 	gohelp.Item("shell", "Shell to use for commands (default: $SHELL, fallback: sh)")
 	gohelp.Item("env_file", "File to source before command execution (optional)")
 
-	gohelp.Paragraph("Example:\n  [settings]\n  default_loop_interval = 100\n  disable_media_keys = false\n  shell = \"/bin/bash\"\n  env_file = \"~/.profile\"")
+	gohelp.Paragraph("Example:\n  [settings]\n  default_interval = 100\n  disable_media_keys = false\n  shell = \"/bin/bash\"\n  env_file = \"~/.profile\"")
 
 	// Shortcuts section
 	fmt.Println(gohelp.Header("[shortcuts]"))
@@ -147,7 +147,7 @@ func HelpModifiers() {
 	fmt.Println(gohelp.Header("Behavior Modifiers"))
 	gohelp.Item(".loop(interval)", "Repeat command while key held (alias: .whileheld)")
 	gohelp.Item("", "  Example: \"super+k.loop(100)\" = \"volume_up\"")
-	gohelp.Item("", "  • Interval in milliseconds (omit for default_loop_interval)")
+	gohelp.Item("", "  • Interval in milliseconds (omit for default_interval)")
 	gohelp.Item("", "  • Executes continuously until key released")
 	gohelp.Item("", "  • Float intervals supported: .loop(0.015) = 15ms")
 
@@ -163,13 +163,12 @@ func HelpModifiers() {
 	gohelp.Item("", "  • Wraps around to first command after last")
 	gohelp.Item("", "  • Requires array of at least 2 commands")
 
-	gohelp.Item(".doubletap(interval)", "Execute on double-tap of modifier key")
+	gohelp.Item(".doubletap(interval)", "Execute on double-tap of any key")
 	gohelp.Item("", "  Example: \"super.doubletap(300)\" = \"notify-send hello\"")
-	gohelp.Item("", "  • Only works on modifier keys: super, ctrl, alt, shift")
+	gohelp.Item("", "  Example: \"prtsc.doubletap(300)\" = \"screen-record\"")
 	gohelp.Item("", "  • First tap starts timer, second tap within interval executes")
-	gohelp.Item("", "  • If timeout expires, checks for .onrelease shortcut")
-	gohelp.Item("", "  • Can combine with .onrelease for single/double tap actions")
-	gohelp.Item("", "  • Cancelled by mouse clicks")
+	gohelp.Item("", "  • If timeout expires, executes single-tap shortcut if defined")
+	gohelp.Item("", "  • Cancelled by mouse clicks (modifiers only)")
 
 	gohelp.Item(".passthrough", "Execute shortcut without consuming modifiers")
 	gohelp.Item("", "  Example: \"v.passthrough\" = \"copyq toggle\"")

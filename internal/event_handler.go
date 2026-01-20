@@ -3,7 +3,6 @@ package internal
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
@@ -22,7 +21,6 @@ func NewLoopState() *LoopState {
 }
 
 func CreateUnifiedHandler(m *Matcher, cfg *config.Config, loopState *LoopState) KeyHandler {
-	logging := isLoggingEnabled()
 	bufferedKeys := make(map[uint16]bool)
 
 	return func(code uint16, value int32) bool {
@@ -34,6 +32,7 @@ func CreateUnifiedHandler(m *Matcher, cfg *config.Config, loopState *LoopState) 
 		// Handle modifiers for tap detection
 		if IsModifierKey(code) {
 			if value == 1 {
+				LogKey(GetKeyName(code), code)
 				m.UpdateModifierState(code, true)
 				// Check if pressed alone
 				modifiers := m.GetCurrentModifiers()
@@ -55,9 +54,8 @@ func CreateUnifiedHandler(m *Matcher, cfg *config.Config, loopState *LoopState) 
 
 							if shortcut := m.GetDoubleTapShortcut(code); shortcut != nil {
 								resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
-								if logging {
-									fmt.Fprintf(os.Stderr, "[SHORTCUT DOUBLETAP] %s\n", resolvedCmd)
-								}
+								LogMatch(GetKeyName(code)+".doubletap", fmt.Sprintf("%d", code))
+								LogTrigger(resolvedCmd)
 								Execute(resolvedCmd, cfg)
 							}
 							m.UpdateModifierState(code, false)
@@ -66,14 +64,16 @@ func CreateUnifiedHandler(m *Matcher, cfg *config.Config, loopState *LoopState) 
 							// First tap - start timer
 							shortcut := m.GetDoubleTapShortcut(code)
 							interval := shortcut.Interval
+							if interval == 0 {
+								interval = cfg.Settings.DefaultInterval
+							}
 
 							doubleTapState.StartTimer(code, interval, func() {
 								// Timeout - check if .onrelease exists and execute
 								if command, hasTap := m.CheckTap(code); hasTap {
 									resolvedCmd := cfg.ResolveCommand(command)
-									if logging {
-										fmt.Fprintf(os.Stderr, "[SHORTCUT TAP] %s\n", resolvedCmd)
-									}
+									LogMatch(GetKeyName(code)+".tap", fmt.Sprintf("%d", code))
+									LogTrigger(resolvedCmd)
 									Execute(resolvedCmd, cfg)
 								}
 							})
@@ -86,9 +86,8 @@ func CreateUnifiedHandler(m *Matcher, cfg *config.Config, loopState *LoopState) 
 				// Check regular tap (only if no doubletap)
 				if command, matched := m.CheckTap(code); matched {
 					resolvedCmd := cfg.ResolveCommand(command)
-					if logging {
-						fmt.Fprintf(os.Stderr, "[SHORTCUT TAP] %s\n", resolvedCmd)
-					}
+					LogMatch(GetKeyName(code)+".tap", fmt.Sprintf("%d", code))
+					LogTrigger(resolvedCmd)
 					Execute(resolvedCmd, cfg)
 				}
 				m.UpdateModifierState(code, false)
@@ -98,27 +97,33 @@ func CreateUnifiedHandler(m *Matcher, cfg *config.Config, loopState *LoopState) 
 
 		// KEY PRESS (value == 1)
 		if value == 1 {
+			LogKey(GetKeyName(code), code)
 			m.ClearTapCandidate() // Any non-modifier clears tap
+
+			// Check if this key has a doubletap shortcut - suppress and wait for release
+			if m.HasDoubleTapShortcut(code) {
+				bufferedKeys[code] = true
+				return true // Suppress, handle on release
+			}
 
 			// Check for press-triggered shortcuts
 			combo := m.GetCurrentCombo(code)
-			if logging {
-				fmt.Fprintf(os.Stderr, "[DEBUG] Key press - combo: %q, code: %d\n", combo, code)
-			}
 
 			hasRelease := m.HasReleaseShortcut(combo)
 			pressMatched := false
 
 			// Check normal press shortcuts
 			if shortcut := m.CheckShortcut(combo, config.BehaviorNormal, config.TimingPress); shortcut != nil {
-				executeShortcut(shortcut, cfg, logging)
+				LogMatch(combo, m.GetComboCodes(code))
+				executeShortcut(shortcut, cfg)
 				pressMatched = true
 			}
 
 			// Check loop shortcuts (start loop)
 			if !pressMatched {
 				if shortcut := m.CheckShortcut(combo, config.BehaviorLoop, config.TimingPress); shortcut != nil {
-					startLoop(combo, shortcut, cfg, loopState, logging)
+					LogMatch(combo+".loop", m.GetComboCodes(code))
+					startLoop(combo, shortcut, cfg, loopState)
 					pressMatched = true
 				}
 			}
@@ -126,7 +131,8 @@ func CreateUnifiedHandler(m *Matcher, cfg *config.Config, loopState *LoopState) 
 			// Check toggle shortcuts (start/stop loop)
 			if !pressMatched {
 				if shortcut := m.CheckShortcut(combo, config.BehaviorToggle, config.TimingPress); shortcut != nil {
-					toggleLoop(combo, shortcut, cfg, m, loopState, logging)
+					LogMatch(combo+".toggle", m.GetComboCodes(code))
+					toggleLoop(combo, shortcut, cfg, m, loopState)
 					pressMatched = true
 				}
 			}
@@ -134,7 +140,8 @@ func CreateUnifiedHandler(m *Matcher, cfg *config.Config, loopState *LoopState) 
 			// Check switch shortcuts (cycle command)
 			if !pressMatched {
 				if shortcut := m.CheckShortcut(combo, config.BehaviorSwitch, config.TimingPress); shortcut != nil {
-					executeSwitchShortcut(combo, shortcut, m, cfg, logging)
+					LogMatch(combo+".switch", m.GetComboCodes(code))
+					executeSwitchShortcut(combo, shortcut, m, cfg)
 					pressMatched = true
 				}
 			}
@@ -159,12 +166,53 @@ func CreateUnifiedHandler(m *Matcher, cfg *config.Config, loopState *LoopState) 
 			// Stop loops (if active)
 			stopLoop(combo, loopState)
 
-			// Check if this was a buffered key
+			// Check for doubletap on non-modifier keys
+			if m.HasDoubleTapShortcut(code) && bufferedKeys[code] {
+				delete(bufferedKeys, code)
+				doubleTapState := m.GetDoubleTapState()
+				if doubleTapState != nil {
+					if doubleTapState.CheckSecondTap(code) {
+						// Second tap - execute doubletap
+						doubleTapState.CancelTimer()
+						if shortcut := m.GetDoubleTapShortcut(code); shortcut != nil {
+							resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
+							LogMatch(combo+".doubletap", m.GetComboCodes(code))
+							LogTrigger(resolvedCmd)
+							Execute(resolvedCmd, cfg)
+						}
+						return true // Suppress
+					} else {
+						// First tap - start timer
+						shortcut := m.GetDoubleTapShortcut(code)
+						interval := shortcut.Interval
+						if interval == 0 {
+							interval = cfg.Settings.DefaultInterval
+						}
+						LogDebug("Doubletap timer started: %.0fms", interval)
+
+						// Capture combo for fallback execution
+						capturedCombo := combo
+						capturedCodes := m.GetComboCodes(code)
+						doubleTapState.StartTimer(code, interval, func() {
+							// Timeout - execute single-tap shortcut if defined
+							if s := m.CheckShortcut(capturedCombo, config.BehaviorNormal, config.TimingPress); s != nil {
+								resolvedCmd := cfg.ResolveCommand(s.Commands[0])
+								LogMatch(capturedCombo, capturedCodes)
+								LogTrigger(resolvedCmd)
+								Execute(resolvedCmd, cfg)
+							}
+						})
+						return true // Suppress
+					}
+				}
+			}
+
+			// Check if this was a buffered key (for release shortcuts)
 			if bufferedKeys[code] {
 				delete(bufferedKeys, code)
 
 				// Execute release shortcuts
-				executeReleaseShortcuts(combo, m, cfg, logging)
+				executeReleaseShortcuts(combo, m, cfg, code)
 				return true // Suppress release
 			}
 		}
@@ -190,18 +238,16 @@ func checkModifierAlone(modifiers ModifierState) bool {
 	return count == 1
 }
 
-func executeShortcut(shortcut *config.ParsedShortcut, cfg *config.Config, logging bool) {
+func executeShortcut(shortcut *config.ParsedShortcut, cfg *config.Config) {
 	if len(shortcut.Commands) == 0 {
 		return
 	}
 	resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
-	if logging {
-		fmt.Fprintf(os.Stderr, "[SHORTCUT] %s\n", resolvedCmd)
-	}
+	LogTrigger(resolvedCmd)
 	Execute(resolvedCmd, cfg)
 }
 
-func startLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, state *LoopState, logging bool) {
+func startLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, state *LoopState) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
 
@@ -212,11 +258,14 @@ func startLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Config
 
 	interval := shortcut.Interval
 	if interval == 0 {
-		interval = cfg.Settings.DefaultLoopInterval
+		interval = cfg.Settings.DefaultInterval
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	state.active[combo] = cancel
+
+	resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
+	LogTrigger(resolvedCmd)
 
 	go func() {
 		ticker := time.NewTicker(time.Duration(interval * 1e6)) // Convert ms to nanoseconds
@@ -227,10 +276,6 @@ func startLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Config
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
-				if logging {
-					fmt.Fprintf(os.Stderr, "[SHORTCUT LOOP] %s\n", resolvedCmd)
-				}
 				Execute(resolvedCmd, cfg)
 			}
 		}
@@ -247,24 +292,24 @@ func stopLoop(combo string, state *LoopState) {
 	}
 }
 
-func toggleLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, m *Matcher, state *LoopState, logging bool) {
+func toggleLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, m *Matcher, state *LoopState) {
 	if m.IsToggleActive(combo) {
 		// Stop loop
 		if cancel := m.StopToggleLoop(combo); cancel != nil {
 			cancel()
 		}
-		if logging {
-			fmt.Fprintf(os.Stderr, "[SHORTCUT TOGGLE] Stopped: %s\n", combo)
-		}
 	} else {
 		// Start loop (doesn't stop on key release)
 		interval := shortcut.Interval
 		if interval == 0 {
-			interval = cfg.Settings.DefaultLoopInterval
+			interval = cfg.Settings.DefaultInterval
 		}
 
 		ctx, cancel := context.WithCancel(context.Background())
 		m.StartToggleLoop(combo, cancel)
+
+		resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
+		LogTrigger(resolvedCmd)
 
 		go func() {
 			ticker := time.NewTicker(time.Duration(interval * 1e6)) // Convert ms to nanoseconds
@@ -275,61 +320,46 @@ func toggleLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Confi
 				case <-ctx.Done():
 					return
 				case <-ticker.C:
-					resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
-					if logging {
-						fmt.Fprintf(os.Stderr, "[SHORTCUT TOGGLE LOOP] %s\n", resolvedCmd)
-					}
 					Execute(resolvedCmd, cfg)
 				}
 			}
 		}()
-
-		if logging {
-			fmt.Fprintf(os.Stderr, "[SHORTCUT TOGGLE] Started: %s\n", combo)
-		}
 	}
 }
 
-func executeSwitchShortcut(combo string, shortcut *config.ParsedShortcut, m *Matcher, cfg *config.Config, logging bool) {
+func executeSwitchShortcut(combo string, shortcut *config.ParsedShortcut, m *Matcher, cfg *config.Config) {
 	key := fmt.Sprintf("%s.switch.%d", combo, shortcut.Timing)
 	command := m.GetNextSwitchCommand(key, shortcut.Commands)
 	resolvedCmd := cfg.ResolveCommand(command)
 
-	if logging {
-		fmt.Fprintf(os.Stderr, "[SHORTCUT SWITCH] %s\n", resolvedCmd)
-	}
+	LogTrigger(resolvedCmd)
 	Execute(resolvedCmd, cfg)
 }
 
-func executeReleaseShortcuts(combo string, m *Matcher, cfg *config.Config, logging bool) {
+func executeReleaseShortcuts(combo string, m *Matcher, cfg *config.Config, code uint16) {
+	codes := m.GetComboCodes(code)
+
 	// Check normal release
 	if shortcut := m.CheckShortcut(combo, config.BehaviorNormal, config.TimingRelease); shortcut != nil {
-		executeShortcut(shortcut, cfg, logging)
+		LogMatch(combo+".onrelease", codes)
+		executeShortcut(shortcut, cfg)
 	}
 
 	// Check loop release (shouldn't happen, but for completeness)
 	if shortcut := m.CheckShortcut(combo, config.BehaviorLoop, config.TimingRelease); shortcut != nil {
-		executeShortcut(shortcut, cfg, logging)
+		LogMatch(combo+".loop.onrelease", codes)
+		executeShortcut(shortcut, cfg)
 	}
 
 	// Check toggle release
 	if shortcut := m.CheckShortcut(combo, config.BehaviorToggle, config.TimingRelease); shortcut != nil {
-		toggleLoop(combo, shortcut, cfg, m, nil, logging)
+		LogMatch(combo+".toggle.onrelease", codes)
+		toggleLoop(combo, shortcut, cfg, m, nil)
 	}
 
 	// Check switch release
 	if shortcut := m.CheckShortcut(combo, config.BehaviorSwitch, config.TimingRelease); shortcut != nil {
-		executeSwitchShortcut(combo, shortcut, m, cfg, logging)
+		LogMatch(combo+".switch.onrelease", codes)
+		executeSwitchShortcut(combo, shortcut, m, cfg)
 	}
-}
-
-var DebugEnabled bool
-var LoggingEnabled bool
-
-func isLoggingEnabled() bool {
-	return LoggingEnabled
-}
-
-func IsDebugEnabled() bool {
-	return DebugEnabled
 }
