@@ -255,7 +255,7 @@ func normalizeKeyCombo(combo string) string {
 
 // ParseShortcut parses a shortcut key with dot syntax into a ParsedShortcut
 // Format: "keycombo[.behavior][.timing]"
-// Examples: "super+k", "super+k.loop", "super+k.loop(100).onrelease"
+// Examples: "super+k", "super+k.whileheld", "super+k.repeat-whileheld(100).onrelease"
 func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 	parts := strings.Split(key, ".")
 	if len(parts) == 0 {

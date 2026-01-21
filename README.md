@@ -2,7 +2,7 @@
   <img src="other/assets/erm.webp" alt="akeyshually banner" width="400">
 </div>
 
-<p align="center">Errm... Akeyshually, this is an evdev-based userspace daemon configured in TOML that intercepts raw input events, performs stateful modifier tracking, and executes arbitrary shell commands through a fire-and-forget subprocess model regardless of session type or graphical environment manager</p>
+<p align="center">Errm... Akeyshually, this is NOT a remapper but an evdev-based userspace daemon configured in TOML that intercepts raw input events, performs stateful modifier tracking, and executes arbitrary shell commands through a fire-and-forget subprocess model regardless of session type or graphical environment manager</p>
 
 <p align="center">
   <a href="https://github.com/DeprecatedLuar/akeyshually/stargazers">
@@ -27,12 +27,13 @@ I made akeyshually to not only have my configs in a single git tracked file, but
 <img src="other/assets/ermactually.jpeg" alt="Actually..." align="right" width="200"/>
 
 - Works on X11, Wayland, literally any WM/DE via evdev
-- All settings declared in a single TOML config
+- All settings declared in a single (or not) TOML config
 - **Actually lightweight** takes about ~3MB binary, <3MB RAM, 0% CPU when idle
 - Configs are hot-reloaded on edit
-- Special modes like `.whileheld`, `.toggle`, `.switch`, `.onrelease`
+- Special modes like `.whileheld`, `.repeat-whileheld`, `.repeat-toggle`, `.switch`, `.doubletap`, `.onrelease`
 - You can literally make an auto-clicker with a single line
 - Works alongside remappers (keyd, kanata, kmonad, xremap...)
+- It's illegal on 7+ countries and counting
 
 ---
 
@@ -109,7 +110,7 @@ Config lives at `~/.config/akeyshually/`:
 # ~/.config/akeyshually/config.toml
 
 [settings]
-default_loop_interval = 100  # Milliseconds for .whileheld/.toggle behaviors
+default_interval = 100       # Milliseconds for repeat behaviors
 disable_media_keys = false   # Forward media keys to system (GNOME/KDE daemons)
 #shell = "/bin/bash"         # Optional: override $SHELL
 #env_file = "~/.profile"     # Optional: source before commands
@@ -139,8 +140,8 @@ disable_media_keys = false   # Forward media keys to system (GNOME/KDE daemons)
 "ctrl+mute" = "mute_mic"
 
 # Advanced behaviors
-"f9.whileheld(50)" = "xdotool click 1"  # Auto-clicker: clicks every 50ms while held
-"f10.toggle" = "xdotool click 1"        # Toggle: starts/stops loop on each press
+"f9.repeat-whileheld(50)" = "xdotool click 1"  # Auto-clicker: clicks every 50ms while held
+"f10.repeat-toggle" = "xdotool click 1"        # Toggle: starts/stops loop on each press
 "super+tab.switch" = ["window1", "window2", "window3"]  # Cycle through commands
 
 # Media keys - uncomment to enable
@@ -178,23 +179,33 @@ mute_toggle = "pactl set-sink-mute @DEFAULT_SINK@ toggle"
 "super+t" = "kitty"  # Executes on key press
 ```
 
-**While Held (repeat while key is held):**
+**While Held (process lifecycle tied to key):**
 ```toml
-"f9.whileheld" = "xdotool click 1"       # Uses default_loop_interval
-"f9.whileheld(0.05)" = "xdotool click 1"   # Custom interval (50ms)
-"f9.whileheld(0.015)" = "xdotool click"  # Sub-second intervals (15ms)
-"f9.loop(50)" = "xdotool click 1"        # Alias for .whileheld
+"super+f.whileheld" = "$FILEMANAGER"   # Opens on press, closes on release
 ```
 
-**Toggle (start/stop on each press):**
+**Repeat While Held (repeat command while key is held):**
 ```toml
-"f10.toggle" = "xdotool click 1"       # Loop continues after release
-"f10.toggle(0.1)" = "xdotool click 1"  # Custom interval in seconds
+"f9.repeat-whileheld" = "xdotool click 1"       # Uses default_interval
+"f9.repeat-whileheld(50)" = "xdotool click 1"   # Custom interval (50ms)
+"f9.repeat-whileheld(0.015)" = "xdotool click"  # Sub-second intervals (15ms)
+```
+
+**Repeat Toggle (start/stop on each press):**
+```toml
+"f10.repeat-toggle" = "xdotool click 1"       # Loop continues after release
+"f10.repeat-toggle(100)" = "xdotool click 1"  # Custom interval in ms
 ```
 
 **Switch (cycle through commands):**
 ```toml
 "super+tab.switch" = ["cmd1", "cmd2", "cmd3"]  # Cycles on each press
+```
+
+**Double-tap (execute on quick double-tap):**
+```toml
+"super.doubletap(200)" = "$LAUNCHER"      # Double-tap within 200ms
+"print.doubletap(300)" = "screen-record"  # Works on any single key
 ```
 
 **Release timing:**
@@ -220,9 +231,11 @@ mute_toggle = "pactl set-sink-mute @DEFAULT_SINK@ toggle"
 
 **Arrows:** `left`, `right`, `up`, `down`
 
-**Function keys:** `f1-f12`
+**Function keys:** `f1-f12`, `calc` (i'm using slang)
 
-**Media keys:** Enabled via `enable_media_keys = true` in config.toml (see `media-keys.toml` for defaults)
+**Media keys:** `volumeup`, `volumedown`, `mute`, `brightnessup`, `brightnessdown`, `playpause`, `nextsong`, `previoussong`
+
+**???:** `102nd`, `ro`
 
 </details>
 
