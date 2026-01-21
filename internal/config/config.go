@@ -76,19 +76,42 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	return loadFromFile(filepath.Join(configDir, "config.toml"))
+}
 
+// LoadFromPath loads config from a custom path
+// Path can be: filename (resolved to config dir), or absolute/relative path
+// Adds .toml extension if missing
+func LoadFromPath(path string) (*Config, error) {
+	// Add .toml extension if missing
+	if !strings.HasSuffix(path, ".toml") {
+		path += ".toml"
+	}
+
+	// If not an absolute path, resolve relative to config dir
+	if !filepath.IsAbs(path) {
+		configDir, err := getConfigDir()
+		if err != nil {
+			return nil, err
+		}
+		path = filepath.Join(configDir, path)
+	}
+
+	return loadFromFile(path)
+}
+
+func loadFromFile(configPath string) (*Config, error) {
 	cfg := &Config{
 		Shortcuts: make(map[string]interface{}),
 		Commands:  make(map[string]string),
 	}
 
-	configPath := filepath.Join(configDir, "config.toml")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("config.toml not found: %s", configPath)
+		return nil, fmt.Errorf("config not found: %s", configPath)
 	}
 
 	if _, err := toml.DecodeFile(configPath, cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config.toml: %w", err)
+		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
 	if len(cfg.Shortcuts) == 0 {
