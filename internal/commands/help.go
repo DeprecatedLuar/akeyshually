@@ -44,6 +44,7 @@ func Help(args ...string) {
 	gohelp.Item("akeyshually version", "Show version information")
 
 	fmt.Println("\nFlags:")
+	gohelp.Item("-c, --config <file>", "Load custom config (name or path)")
 	gohelp.Item("--debug", "Show device detection and verbose output")
 
 	fmt.Println("\nHelp Topics:")

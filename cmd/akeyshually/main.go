@@ -16,13 +16,13 @@ import (
 
 func main() {
 	// Parse CLI arguments and execute commands
-	// Returns true only for foreground mode
-	if handler.Parse(os.Args[1:]) {
-		startDaemon()
+	result := handler.Parse(os.Args[1:])
+	if result.RunForeground {
+		startDaemon(result.ConfigPath)
 	}
 }
 
-func startDaemon() {
+func startDaemon(configPath string) {
 	// Check for existing instances
 	pid, err := internal.GetRunningDaemonPid()
 	if err != nil {
@@ -48,29 +48,40 @@ func startDaemon() {
 		fmt.Fprintf(os.Stderr, "Warning: failed to write pidfile: %v\n", err)
 	}
 
-	if err := config.EnsureConfigExists(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize config: %v\n", err)
-		os.Exit(1)
+	// Only ensure default config exists if not using custom config
+	if configPath == "" {
+		if err := config.EnsureConfigExists(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to initialize config: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
-	// Load enabled overlays
-	enabledOverlays, err := internal.ReadEnabledState()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to read enabled state: %v\n", err)
-		enabledOverlays = []string{}
-	}
-
-	// Load config with overlays
-	cfg, err := config.LoadWithOverlays(enabledOverlays)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Config error: %v\n", err)
-		internal.NotifyError("akeyshually startup failed", fmt.Sprintf("Config error: %v", err))
-		os.Exit(1)
-	}
-
-	// Print enabled overlays
-	if len(enabledOverlays) > 0 {
-		fmt.Printf("Enabled overlays: %v\n", enabledOverlays)
+	// Load config
+	var cfg *config.Config
+	if configPath != "" {
+		// Custom config - no overlays
+		cfg, err = config.LoadFromPath(configPath)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Config error: %v\n", err)
+			internal.NotifyError("akeyshually startup failed", fmt.Sprintf("Config error: %v", err))
+			os.Exit(1)
+		}
+	} else {
+		// Default config with overlays
+		enabledOverlays, err := internal.ReadEnabledState()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to read enabled state: %v\n", err)
+			enabledOverlays = []string{}
+		}
+		cfg, err = config.LoadWithOverlays(enabledOverlays)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Config error: %v\n", err)
+			internal.NotifyError("akeyshually startup failed", fmt.Sprintf("Config error: %v", err))
+			os.Exit(1)
+		}
+		if len(enabledOverlays) > 0 {
+			fmt.Printf("Enabled overlays: %v\n", enabledOverlays)
+		}
 	}
 
 	keyboardPairs, err := internal.FindKeyboards()

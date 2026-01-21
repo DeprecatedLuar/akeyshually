@@ -8,22 +8,39 @@ import (
 	"github.com/deprecatedluar/akeyshually/internal/commands"
 )
 
+// ParseResult contains the result of CLI argument parsing
+type ParseResult struct {
+	RunForeground bool
+	ConfigPath    string // Custom config path (empty = default)
+}
+
 // Parse handles all CLI argument parsing and command execution
-// Returns true if foreground mode should run, false if command was handled
-func Parse(args []string) bool {
+// Returns ParseResult with foreground flag and optional config path
+func Parse(args []string) ParseResult {
 	// Process flags first, collect remaining args
 	var remaining []string
-	for _, arg := range args {
+	var configPath string
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
 		switch arg {
 		case "--debug":
 			internal.SetDebug(true)
+		case "-c", "--config":
+			if i+1 < len(args) {
+				configPath = args[i+1]
+				i++ // Skip next arg
+			} else {
+				fmt.Fprintf(os.Stderr, "Error: %s requires a config path\n", arg)
+				os.Exit(1)
+			}
 		default:
 			remaining = append(remaining, arg)
 		}
 	}
 
 	if len(remaining) == 0 {
-		return true // Run in foreground
+		return ParseResult{RunForeground: true, ConfigPath: configPath}
 	}
 
 	command := remaining[0]
@@ -87,5 +104,5 @@ func Parse(args []string) bool {
 		os.Exit(1)
 	}
 
-	return false
+	return ParseResult{} // Never reached, commands exit
 }
