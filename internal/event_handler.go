@@ -119,19 +119,19 @@ func CreateUnifiedHandler(m *Matcher, cfg *config.Config, loopState *LoopState) 
 				pressMatched = true
 			}
 
-			// Check loop shortcuts (start loop)
+			// Check repeat-whileheld shortcuts (repeat while held, stop on release)
 			if !pressMatched {
-				if shortcut := m.CheckShortcut(combo, config.BehaviorLoop, config.TimingPress); shortcut != nil {
-					LogMatch(combo+".loop", m.GetComboCodes(code))
+				if shortcut := m.CheckShortcut(combo, config.BehaviorRepeatWhileHeld, config.TimingPress); shortcut != nil {
+					LogMatch(combo+".repeat-whileheld", m.GetComboCodes(code))
 					startLoop(combo, shortcut, cfg, loopState)
 					pressMatched = true
 				}
 			}
 
-			// Check toggle shortcuts (start/stop loop)
+			// Check repeat-toggle shortcuts (toggle repeat loop on/off)
 			if !pressMatched {
-				if shortcut := m.CheckShortcut(combo, config.BehaviorToggle, config.TimingPress); shortcut != nil {
-					LogMatch(combo+".toggle", m.GetComboCodes(code))
+				if shortcut := m.CheckShortcut(combo, config.BehaviorRepeatToggle, config.TimingPress); shortcut != nil {
+					LogMatch(combo+".repeat-toggle", m.GetComboCodes(code))
 					toggleLoop(combo, shortcut, cfg, m, loopState)
 					pressMatched = true
 				}
@@ -345,15 +345,15 @@ func executeReleaseShortcuts(combo string, m *Matcher, cfg *config.Config, code 
 		executeShortcut(shortcut, cfg)
 	}
 
-	// Check loop release (shouldn't happen, but for completeness)
-	if shortcut := m.CheckShortcut(combo, config.BehaviorLoop, config.TimingRelease); shortcut != nil {
-		LogMatch(combo+".loop.onrelease", codes)
+	// Check repeat-whileheld release (edge case)
+	if shortcut := m.CheckShortcut(combo, config.BehaviorRepeatWhileHeld, config.TimingRelease); shortcut != nil {
+		LogMatch(combo+".repeat-whileheld.onrelease", codes)
 		executeShortcut(shortcut, cfg)
 	}
 
-	// Check toggle release
-	if shortcut := m.CheckShortcut(combo, config.BehaviorToggle, config.TimingRelease); shortcut != nil {
-		LogMatch(combo+".toggle.onrelease", codes)
+	// Check repeat-toggle release
+	if shortcut := m.CheckShortcut(combo, config.BehaviorRepeatToggle, config.TimingRelease); shortcut != nil {
+		LogMatch(combo+".repeat-toggle.onrelease", codes)
 		toggleLoop(combo, shortcut, cfg, m, nil)
 	}
 

@@ -24,12 +24,12 @@ func NotifyInfo(title, message string) {
 }
 
 // GetPidFilePath returns the path to the pidfile
+// Uses XDG_RUNTIME_DIR (proper location for runtime state), falls back to /tmp
 func GetPidFilePath() (string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get home directory: %w", err)
+	if xdgRuntime := os.Getenv("XDG_RUNTIME_DIR"); xdgRuntime != "" {
+		return filepath.Join(xdgRuntime, "akeyshually.pid"), nil
 	}
-	return filepath.Join(homeDir, ".config", "akeyshually", "akeyshually.pid"), nil
+	return fmt.Sprintf("/tmp/akeyshually-%d.pid", os.Getuid()), nil
 }
 
 // WritePidFile writes the given PID to the pidfile

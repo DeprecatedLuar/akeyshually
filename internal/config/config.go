@@ -27,8 +27,11 @@ type BehaviorMode int
 
 const (
 	BehaviorNormal BehaviorMode = iota
-	BehaviorLoop
+	BehaviorWhileHeld
+	BehaviorHold
 	BehaviorToggle
+	BehaviorRepeatWhileHeld
+	BehaviorRepeatToggle
 	BehaviorSwitch
 	BehaviorDoubleTap
 )
@@ -263,21 +266,27 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 	}
 
 	// Parse modifiers (behavior and timing)
-	intervalRegex := regexp.MustCompile(`^(loop|whileheld|toggle|doubletap)\((\d+\.?\d*|\d*\.\d+)\)$`)
+	intervalRegex := regexp.MustCompile(`^(whileheld|hold|toggle|repeat-whileheld|repeat-toggle|doubletap)\((\d+\.?\d*|\d*\.\d+)\)$`)
 
 	for i := 1; i < len(parts); i++ {
 		part := strings.ToLower(parts[i])
 
 		// Check for interval notation
 		if matches := intervalRegex.FindStringSubmatch(part); matches != nil {
-			behaviorName := matches[1]
+			modifierName := matches[1]
 			interval, _ := strconv.ParseFloat(matches[2], 64)
 
-			switch behaviorName {
-			case "loop", "whileheld":
-				shortcut.Behavior = BehaviorLoop
+			switch modifierName {
+			case "whileheld":
+				shortcut.Behavior = BehaviorWhileHeld
+			case "hold":
+				shortcut.Behavior = BehaviorHold
 			case "toggle":
 				shortcut.Behavior = BehaviorToggle
+			case "repeat-whileheld":
+				shortcut.Behavior = BehaviorRepeatWhileHeld
+			case "repeat-toggle":
+				shortcut.Behavior = BehaviorRepeatToggle
 			case "doubletap":
 				shortcut.Behavior = BehaviorDoubleTap
 			}
@@ -287,10 +296,16 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 
 		// Parse behavior modes (without interval)
 		switch part {
-		case "loop", "whileheld":
-			shortcut.Behavior = BehaviorLoop
+		case "whileheld":
+			shortcut.Behavior = BehaviorWhileHeld
+		case "hold":
+			shortcut.Behavior = BehaviorHold
 		case "toggle":
 			shortcut.Behavior = BehaviorToggle
+		case "repeat-whileheld":
+			shortcut.Behavior = BehaviorRepeatWhileHeld
+		case "repeat-toggle":
+			shortcut.Behavior = BehaviorRepeatToggle
 		case "switch":
 			shortcut.Behavior = BehaviorSwitch
 		case "doubletap":
@@ -324,10 +339,16 @@ func behaviorName(b BehaviorMode) string {
 	switch b {
 	case BehaviorNormal:
 		return "normal"
-	case BehaviorLoop:
-		return "loop"
+	case BehaviorWhileHeld:
+		return "whileheld"
+	case BehaviorHold:
+		return "hold"
 	case BehaviorToggle:
 		return "toggle"
+	case BehaviorRepeatWhileHeld:
+		return "repeat-whileheld"
+	case BehaviorRepeatToggle:
+		return "repeat-toggle"
 	case BehaviorSwitch:
 		return "switch"
 	case BehaviorDoubleTap:
@@ -338,6 +359,9 @@ func behaviorName(b BehaviorMode) string {
 }
 
 func GetConfigDir() (string, error) {
+	if xdgConfig := os.Getenv("XDG_CONFIG_HOME"); xdgConfig != "" {
+		return filepath.Join(xdgConfig, "akeyshually"), nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", fmt.Errorf("failed to get home directory: %w", err)

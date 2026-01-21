@@ -12,6 +12,12 @@ import (
 )
 
 func Execute(command string, cfg *config.Config) {
+	ExecuteTracked(command, cfg)
+}
+
+// ExecuteTracked starts a command and returns the exec.Cmd for process lifecycle management.
+// Returns nil if the command fails to start.
+func ExecuteTracked(command string, cfg *config.Config) *exec.Cmd {
 	shell := cfg.Settings.Shell
 	if shell == "" {
 		shell = os.Getenv("SHELL")
@@ -32,8 +38,17 @@ func Execute(command string, cfg *config.Config) {
 
 	if err := cmd.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to execute '%s': %v\n", command, err)
+		return nil
+	}
+	return cmd
+}
+
+// StopProcess sends SIGTERM to a tracked process.
+func StopProcess(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
 		return
 	}
+	cmd.Process.Signal(syscall.SIGTERM)
 }
 
 func expandHome(path string) string {
