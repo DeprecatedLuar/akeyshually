@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"sync"
 	"time"
 
@@ -10,13 +11,15 @@ import (
 )
 
 type LoopState struct {
-	mu     sync.Mutex
-	active map[string]context.CancelFunc // "super+k" (combo only) -> cancel
+	mu            sync.Mutex
+	active        map[string]context.CancelFunc // repeat loops: combo -> cancel
+	heldProcesses map[string]*exec.Cmd          // whileheld: combo -> process
 }
 
 func NewLoopState() *LoopState {
 	return &LoopState{
-		active: make(map[string]context.CancelFunc),
+		active:        make(map[string]context.CancelFunc),
+		heldProcesses: make(map[string]*exec.Cmd),
 	}
 }
 
@@ -119,6 +122,15 @@ func CreateUnifiedHandler(m *Matcher, cfg *config.Config, loopState *LoopState) 
 				pressMatched = true
 			}
 
+			// Check whileheld shortcuts (start process, kill on release)
+			if !pressMatched {
+				if shortcut := m.CheckShortcut(combo, config.BehaviorWhileHeld, config.TimingPress); shortcut != nil {
+					LogMatch(combo+".whileheld", m.GetComboCodes(code))
+					startHeldProcess(combo, shortcut, cfg, loopState)
+					pressMatched = true
+				}
+			}
+
 			// Check repeat-whileheld shortcuts (repeat while held, stop on release)
 			if !pressMatched {
 				if shortcut := m.CheckShortcut(combo, config.BehaviorRepeatWhileHeld, config.TimingPress); shortcut != nil {
@@ -165,6 +177,9 @@ func CreateUnifiedHandler(m *Matcher, cfg *config.Config, loopState *LoopState) 
 
 			// Stop loops (if active)
 			stopLoop(combo, loopState)
+
+			// Stop held processes (if active)
+			stopHeldProcess(combo, loopState)
 
 			// Check for doubletap on non-modifier keys
 			if m.HasDoubleTapShortcut(code) && bufferedKeys[code] {
@@ -289,6 +304,33 @@ func stopLoop(combo string, state *LoopState) {
 	if cancel, exists := state.active[combo]; exists {
 		cancel()
 		delete(state.active, combo)
+	}
+}
+
+func startHeldProcess(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, state *LoopState) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	// Kill existing if any
+	if cmd, exists := state.heldProcesses[combo]; exists {
+		StopProcess(cmd)
+	}
+
+	resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
+	LogTrigger(resolvedCmd)
+	cmd := ExecuteTracked(resolvedCmd, cfg)
+	if cmd != nil {
+		state.heldProcesses[combo] = cmd
+	}
+}
+
+func stopHeldProcess(combo string, state *LoopState) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	if cmd, exists := state.heldProcesses[combo]; exists {
+		StopProcess(cmd)
+		delete(state.heldProcesses, combo)
 	}
 }
 
