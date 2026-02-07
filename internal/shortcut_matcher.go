@@ -70,17 +70,21 @@ func init() {
 
 	// Override with canonical names (preferred) and add modifiers
 	canonicalOverrides := map[uint16]string{
-		evdev.KEY_ENTER:      "return",
-		evdev.KEY_ESC:        "esc",
-		evdev.KEY_SYSRQ:      "print",
-		evdev.KEY_LEFTMETA:   "super",
-		evdev.KEY_RIGHTMETA:  "super",
-		evdev.KEY_LEFTCTRL:   "ctrl",
-		evdev.KEY_RIGHTCTRL:  "ctrl",
-		evdev.KEY_LEFTALT:    "alt",
-		evdev.KEY_RIGHTALT:   "alt",
-		evdev.KEY_LEFTSHIFT:  "shift",
-		evdev.KEY_RIGHTSHIFT: "shift",
+		evdev.KEY_ENTER:        "return",
+		evdev.KEY_ESC:          "esc",
+		evdev.KEY_SYSRQ:        "print",
+		evdev.KEY_LEFTMETA:     "super",
+		evdev.KEY_RIGHTMETA:    "super",
+		evdev.KEY_LEFTCTRL:     "ctrl",
+		evdev.KEY_RIGHTCTRL:    "ctrl",
+		evdev.KEY_LEFTALT:      "alt",
+		evdev.KEY_RIGHTALT:     "alt",
+		evdev.KEY_LEFTSHIFT:    "shift",
+		evdev.KEY_RIGHTSHIFT:   "shift",
+		evdev.KEY_PLAYPAUSE:    "playpause",
+		evdev.KEY_NEXTSONG:     "nextsong",
+		evdev.KEY_PREVIOUSSONG: "previoussong",
+		evdev.KEY_CALC:         "calc",
 	}
 	for code, name := range canonicalOverrides {
 		codeToNameMap[code] = name

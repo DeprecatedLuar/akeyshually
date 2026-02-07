@@ -40,6 +40,9 @@ func ExecuteTracked(command string, cfg *config.Config) *exec.Cmd {
 		fmt.Fprintf(os.Stderr, "Failed to execute '%s': %v\n", command, err)
 		return nil
 	}
+
+	go cmd.Wait()
+
 	return cmd
 }
 
@@ -49,6 +52,7 @@ func StopProcess(cmd *exec.Cmd) {
 		return
 	}
 	cmd.Process.Signal(syscall.SIGTERM)
+	cmd.Wait()
 }
 
 func expandHome(path string) string {

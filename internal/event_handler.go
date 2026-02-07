@@ -14,12 +14,14 @@ type LoopState struct {
 	mu            sync.Mutex
 	active        map[string]context.CancelFunc // repeat loops: combo -> cancel
 	heldProcesses map[string]*exec.Cmd          // whileheld: combo -> process
+	holdTimers    map[string]context.CancelFunc // hold: combo -> cancel timer
 }
 
 func NewLoopState() *LoopState {
 	return &LoopState{
 		active:        make(map[string]context.CancelFunc),
 		heldProcesses: make(map[string]*exec.Cmd),
+		holdTimers:    make(map[string]context.CancelFunc),
 	}
 }
 
@@ -131,6 +133,15 @@ func CreateUnifiedHandler(m *Matcher, cfg *config.Config, loopState *LoopState) 
 				}
 			}
 
+			// Check hold shortcuts (fire after threshold)
+			if !pressMatched {
+				if shortcut := m.CheckShortcut(combo, config.BehaviorHold, config.TimingPress); shortcut != nil {
+					LogMatch(combo+".hold", m.GetComboCodes(code))
+					startHoldTimer(combo, shortcut, cfg, loopState)
+					pressMatched = true
+				}
+			}
+
 			// Check repeat-whileheld shortcuts (repeat while held, stop on release)
 			if !pressMatched {
 				if shortcut := m.CheckShortcut(combo, config.BehaviorRepeatWhileHeld, config.TimingPress); shortcut != nil {
@@ -180,6 +191,9 @@ func CreateUnifiedHandler(m *Matcher, cfg *config.Config, loopState *LoopState) 
 
 			// Stop held processes (if active)
 			stopHeldProcess(combo, loopState)
+
+			// Cancel hold timers (if active)
+			cancelHoldTimer(combo, loopState)
 
 			// Check for doubletap on non-modifier keys
 			if m.HasDoubleTapShortcut(code) && bufferedKeys[code] {
@@ -331,6 +345,49 @@ func stopHeldProcess(combo string, state *LoopState) {
 	if cmd, exists := state.heldProcesses[combo]; exists {
 		StopProcess(cmd)
 		delete(state.heldProcesses, combo)
+	}
+}
+
+func startHoldTimer(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, state *LoopState) {
+	state.mu.Lock()
+
+	// Cancel existing timer if any
+	if cancel, exists := state.holdTimers[combo]; exists {
+		cancel()
+	}
+
+	interval := shortcut.Interval
+	if interval == 0 {
+		interval = cfg.Settings.DefaultInterval
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	state.holdTimers[combo] = cancel
+	state.mu.Unlock()
+
+	resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Duration(interval * 1e6)):
+			state.mu.Lock()
+			delete(state.holdTimers, combo)
+			state.mu.Unlock()
+			LogTrigger(resolvedCmd)
+			Execute(resolvedCmd, cfg)
+		}
+	}()
+}
+
+func cancelHoldTimer(combo string, state *LoopState) {
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	if cancel, exists := state.holdTimers[combo]; exists {
+		cancel()
+		delete(state.holdTimers, combo)
 	}
 }
 
