@@ -239,6 +239,15 @@ func normalizeKey(key string) string {
 		return "escape"
 	case "bksp":
 		return "backspace"
+	// Media key aliases
+	case "play":
+		return "playpause"
+	case "next":
+		return "nextsong"
+	case "previous", "prev":
+		return "previoussong"
+	case "calculator":
+		return "calc"
 	}
 
 	return key
