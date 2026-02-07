@@ -269,8 +269,16 @@ func FindMice() ([]*evdev.InputDevice, error) {
 
 		name, _ := dev.Name()
 
+		nameLower := strings.ToLower(name)
+
 		// Skip virtual keyboards we created
-		if strings.Contains(strings.ToLower(name), "akeyshually") {
+		if strings.Contains(nameLower, "akeyshually") {
+			dev.Close()
+			continue
+		}
+
+		// Skip remapper virtual devices (they have BTN_LEFT but aren't mice)
+		if isRemapperVirtual(dev) {
 			dev.Close()
 			continue
 		}
@@ -313,6 +321,14 @@ func isMouse(dev *evdev.InputDevice) bool {
 	return keyMap[evdev.EvCode(evdev.BTN_LEFT)]
 }
 
+func isClickButton(code evdev.EvCode) bool {
+	switch code {
+	case evdev.EvCode(evdev.BTN_LEFT), evdev.EvCode(evdev.BTN_RIGHT), evdev.EvCode(evdev.BTN_MIDDLE):
+		return true
+	}
+	return false
+}
+
 type MouseButtonHandler func()
 
 // ListenMouse monitors mouse button presses (read-only, no grabbing)
@@ -326,8 +342,8 @@ func ListenMouse(dev *evdev.InputDevice, handler MouseButtonHandler) error {
 			return fmt.Errorf("read error: %w", err)
 		}
 
-		// Trigger on any mouse button press (value == 1)
-		if event.Type == evdev.EV_KEY && event.Value == 1 {
+		// Trigger only on actual mouse button clicks (not BTN_TOOL_FINGER, BTN_TOUCH, etc.)
+		if event.Type == evdev.EV_KEY && event.Value == 1 && isClickButton(event.Code) {
 			handler()
 		}
 	}
