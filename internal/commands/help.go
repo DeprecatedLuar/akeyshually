@@ -33,6 +33,7 @@ var (
 			gohelp.Cmd("disable_media_keys", "Forward media keys to system (default: false)"),
 			gohelp.Cmd("shell", "Shell to use for commands (default: $SHELL, fallback: sh)"),
 			gohelp.Cmd("env_file", "File to source before command execution (optional)"),
+			gohelp.Cmd("devices", "List of device name substrings to grab (case-insensitive)").Example("devices = [\"Huion\", \"Xbox Controller\"]"),
 		).
 		Text("[settings]\ndefault_interval = 100\ndisable_media_keys = false\nshell = \"/bin/bash\"\nenv_file = \"~/.profile\"").
 		Section("[shortcuts]",

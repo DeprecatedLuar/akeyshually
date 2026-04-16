@@ -46,3 +46,39 @@ func TestNonAliasSwitchHasNoGroup(t *testing.T) {
 		t.Errorf("non-alias AliasGroup should be empty, got %q", shortcuts[0].AliasGroup)
 	}
 }
+
+func TestMergeDeduplicatesDevices(t *testing.T) {
+	base := &Config{
+		Shortcuts:       map[string]interface{}{"f1": "echo base"},
+		Commands:        make(map[string]string),
+		ParsedShortcuts: make(map[string][]*ParsedShortcut),
+		Settings:        Settings{Devices: []string{"Huion"}},
+	}
+
+	overlay := &Config{
+		Shortcuts: make(map[string]interface{}),
+		Commands:  make(map[string]string),
+		Settings:  Settings{Devices: []string{"huion", "Xbox Controller"}}, // "huion" duplicates "Huion"
+	}
+
+	base.Merge(overlay)
+
+	if len(base.Settings.Devices) != 2 {
+		t.Errorf("expected 2 devices after merge, got %d: %v", len(base.Settings.Devices), base.Settings.Devices)
+	}
+}
+
+func TestDevicesFieldParses(t *testing.T) {
+	dst := make(map[string][]*ParsedShortcut)
+	err := parseShortcutsInto(dst, "btn_south", "notify-send test")
+	if err != nil {
+		t.Fatalf("btn_south should parse without error: %v", err)
+	}
+	shortcuts, ok := dst["btn_south"]
+	if !ok {
+		t.Fatal("expected btn_south in parsed shortcuts")
+	}
+	if shortcuts[0].KeyCombo != "btn_south" {
+		t.Errorf("KeyCombo = %q, want %q", shortcuts[0].KeyCombo, "btn_south")
+	}
+}

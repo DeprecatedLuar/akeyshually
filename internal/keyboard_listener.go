@@ -5,7 +5,9 @@ import (
 	"os"
 	"strings"
 	"syscall"
+	"time"
 
+	"github.com/deprecatedluar/akeyshually/internal/matcher"
 	evdev "github.com/holoplot/go-evdev"
 )
 
@@ -241,6 +243,9 @@ func Listen(pair KeyboardPair, handler KeyHandler) error {
 			}
 		} else {
 			// Forward all non-key events immediately
+			if event.Type == evdev.EV_ABS && IsLoggingEnabled() {
+				LogKey(matcher.GetAbsName(uint16(event.Code)), uint16(event.Code))
+			}
 			pair.Virtual.WriteOne(event)
 		}
 	}
@@ -250,6 +255,118 @@ func Cleanup(pair KeyboardPair) {
 	pair.Physical.Ungrab()
 	evdev.DestroyDevice(pair.Virtual)
 	pair.Physical.Close()
+}
+
+// FindDeclaredDevices finds and grabs devices whose names contain any of the given substrings.
+func FindDeclaredDevices(matches []string) ([]KeyboardPair, error) {
+	paths, err := evdev.ListDevicePaths()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list input devices: %w", err)
+	}
+
+	var pairs []KeyboardPair
+
+	for _, path := range paths {
+		dev, err := evdev.Open(path.Path)
+		if err != nil {
+			continue
+		}
+
+		name, _ := dev.Name()
+		nameLower := strings.ToLower(name)
+
+		// Skip our own virtual devices
+		if strings.Contains(nameLower, "akeyshually") {
+			dev.Close()
+			continue
+		}
+
+		// Check if device name matches any declared pattern (case-insensitive)
+		matched := false
+		for _, match := range matches {
+			if strings.Contains(nameLower, strings.ToLower(match)) {
+				matched = true
+				break
+			}
+		}
+
+		if !matched {
+			dev.Close()
+			continue
+		}
+
+		LogDebug("Found declared device: %s", name)
+
+		if err := dev.Grab(); err != nil {
+			fmt.Fprintf(os.Stderr, "[WARN] Failed to grab %s: %v\n", name, err)
+			dev.Close()
+			continue
+		}
+
+		virtual, err := evdev.CloneDevice(name+" (akeyshually)", dev)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[WARN] Failed to clone %s: %v\n", name, err)
+			dev.Ungrab()
+			dev.Close()
+			continue
+		}
+
+		pairs = append(pairs, KeyboardPair{Physical: dev, Virtual: virtual})
+	}
+
+	return pairs, nil
+}
+
+// ListenWithReconnect wraps Listen with automatic reconnection on device disconnect.
+// On ENODEV it calls findFn every 2 seconds (up to 30 attempts) to find the device by name.
+func ListenWithReconnect(pair KeyboardPair, handler KeyHandler, findFn func() ([]KeyboardPair, error), deviceName string) error {
+	for {
+		err := Listen(pair, handler)
+		if err == nil {
+			return nil
+		}
+
+		// Only retry on device disconnect
+		if !strings.Contains(err.Error(), "device disconnected") {
+			return err
+		}
+
+		Cleanup(pair)
+		LogDebug("Device %q disconnected, attempting reconnect...", deviceName)
+
+		var newPair *KeyboardPair
+		for attempt := 1; attempt <= 30; attempt++ {
+			time.Sleep(2 * time.Second)
+
+			pairs, err := findFn()
+			if err != nil {
+				LogDebug("Reconnect attempt %d/30: %v", attempt, err)
+				continue
+			}
+
+			for _, p := range pairs {
+				name, _ := p.Physical.Name()
+				if name == deviceName && newPair == nil {
+					found := p
+					newPair = &found
+				} else {
+					Cleanup(p)
+				}
+			}
+
+			if newPair != nil {
+				break
+			}
+			LogDebug("Reconnect attempt %d/30: %q not found", attempt, deviceName)
+		}
+
+		if newPair == nil {
+			return fmt.Errorf("device %q did not reconnect within 1 minute", deviceName)
+		}
+
+		pair = *newPair
+		fmt.Printf("  - Reconnected: %s\n", deviceName)
+	}
 }
 
 // FindMice detects mouse devices (read-only, no grabbing)

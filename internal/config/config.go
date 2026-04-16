@@ -16,11 +16,12 @@ import (
 var embeddedConfigs embed.FS
 
 type Settings struct {
-	DefaultInterval float64 `toml:"default_interval"` // >= 10 = milliseconds, < 10 = seconds (default: 100)
-	DisableMediaKeys      bool    `toml:"disable_media_keys"`       // Forward media keys to system (default: false)
-	Shell                 string  `toml:"shell"`                    // Optional: override $SHELL
-	EnvFile               string  `toml:"env_file"`                 // Optional: source before commands
-	NotifyOnOverlayChange bool    `toml:"notify_on_overlay_change"` // Desktop notifications for overlay changes
+	DefaultInterval       float64  `toml:"default_interval"`        // >= 10 = milliseconds, < 10 = seconds (default: 100)
+	DisableMediaKeys      bool     `toml:"disable_media_keys"`      // Forward media keys to system (default: false)
+	Shell                 string   `toml:"shell"`                   // Optional: override $SHELL
+	EnvFile               string   `toml:"env_file"`                // Optional: source before commands
+	NotifyOnOverlayChange bool     `toml:"notify_on_overlay_change"` // Desktop notifications for overlay changes
+	Devices               []string `toml:"devices"`                 // Device name substrings to grab (case-insensitive)
 }
 
 type BehaviorMode int
@@ -206,6 +207,18 @@ func (c *Config) Merge(overlay *Config) {
 	// Merge default_loop_interval if overlay specifies one
 	if overlay.Settings.DefaultInterval != 0 {
 		c.Settings.DefaultInterval = overlay.Settings.DefaultInterval
+	}
+
+	// Merge devices (deduplicated, case-insensitive)
+	existing := make(map[string]bool, len(c.Settings.Devices))
+	for _, d := range c.Settings.Devices {
+		existing[strings.ToLower(d)] = true
+	}
+	for _, d := range overlay.Settings.Devices {
+		if !existing[strings.ToLower(d)] {
+			c.Settings.Devices = append(c.Settings.Devices, d)
+			existing[strings.ToLower(d)] = true
+		}
 	}
 
 	// Rebuild ParsedShortcuts after merge

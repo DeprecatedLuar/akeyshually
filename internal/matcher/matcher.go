@@ -1,4 +1,4 @@
-package internal
+package matcher
 
 import (
 	"context"
@@ -11,85 +11,6 @@ import (
 
 	evdev "github.com/holoplot/go-evdev"
 )
-
-var keyCodeMap = map[string]uint16{
-	"a": evdev.KEY_A, "b": evdev.KEY_B, "c": evdev.KEY_C, "d": evdev.KEY_D,
-	"e": evdev.KEY_E, "f": evdev.KEY_F, "g": evdev.KEY_G, "h": evdev.KEY_H,
-	"i": evdev.KEY_I, "j": evdev.KEY_J, "k": evdev.KEY_K, "l": evdev.KEY_L,
-	"m": evdev.KEY_M, "n": evdev.KEY_N, "o": evdev.KEY_O, "p": evdev.KEY_P,
-	"q": evdev.KEY_Q, "r": evdev.KEY_R, "s": evdev.KEY_S, "t": evdev.KEY_T,
-	"u": evdev.KEY_U, "v": evdev.KEY_V, "w": evdev.KEY_W, "x": evdev.KEY_X,
-	"y": evdev.KEY_Y, "z": evdev.KEY_Z,
-	"1": evdev.KEY_1, "2": evdev.KEY_2, "3": evdev.KEY_3, "4": evdev.KEY_4,
-	"5": evdev.KEY_5, "6": evdev.KEY_6, "7": evdev.KEY_7, "8": evdev.KEY_8,
-	"9": evdev.KEY_9, "0": evdev.KEY_0,
-	"return": evdev.KEY_ENTER, "enter": evdev.KEY_ENTER,
-	"space": evdev.KEY_SPACE, "tab": evdev.KEY_TAB,
-	"esc": evdev.KEY_ESC, "escape": evdev.KEY_ESC,
-	"backspace": evdev.KEY_BACKSPACE,
-	"semicolon": evdev.KEY_SEMICOLON, ";": evdev.KEY_SEMICOLON,
-	"ro": evdev.KEY_RO,
-	"102nd": evdev.KEY_102ND,
-	"kp0": evdev.KEY_KP0, "kp1": evdev.KEY_KP1, "kp2": evdev.KEY_KP2, "kp3": evdev.KEY_KP3,
-	"kp4": evdev.KEY_KP4, "kp5": evdev.KEY_KP5, "kp6": evdev.KEY_KP6, "kp7": evdev.KEY_KP7,
-	"kp8": evdev.KEY_KP8, "kp9": evdev.KEY_KP9,
-	"kpplus": evdev.KEY_KPPLUS, "kpminus": evdev.KEY_KPMINUS,
-	"kpasterisk": evdev.KEY_KPASTERISK, "kpslash": evdev.KEY_KPSLASH,
-	"kpenter": evdev.KEY_KPENTER, "kpdot": evdev.KEY_KPDOT,
-	"print": evdev.KEY_SYSRQ, "printscreen": evdev.KEY_SYSRQ,
-	"f1": evdev.KEY_F1, "f2": evdev.KEY_F2, "f3": evdev.KEY_F3, "f4": evdev.KEY_F4,
-	"f5": evdev.KEY_F5, "f6": evdev.KEY_F6, "f7": evdev.KEY_F7, "f8": evdev.KEY_F8,
-	"f9": evdev.KEY_F9, "f10": evdev.KEY_F10, "f11": evdev.KEY_F11, "f12": evdev.KEY_F12,
-	"f13": evdev.KEY_F13, "f14": evdev.KEY_F14, "f15": evdev.KEY_F15, "f16": evdev.KEY_F16,
-	"f17": evdev.KEY_F17, "f18": evdev.KEY_F18, "f19": evdev.KEY_F19, "f20": evdev.KEY_F20,
-	"f21": evdev.KEY_F21, "f22": evdev.KEY_F22, "f23": evdev.KEY_F23, "f24": evdev.KEY_F24,
-	"left": evdev.KEY_LEFT, "right": evdev.KEY_RIGHT,
-	"up": evdev.KEY_UP, "down": evdev.KEY_DOWN,
-	"home": evdev.KEY_HOME, "end": evdev.KEY_END,
-	"pageup": evdev.KEY_PAGEUP, "pagedown": evdev.KEY_PAGEDOWN,
-	"delete": evdev.KEY_DELETE, "insert": evdev.KEY_INSERT,
-	"volumeup": evdev.KEY_VOLUMEUP, "volumedown": evdev.KEY_VOLUMEDOWN,
-	"mute": evdev.KEY_MUTE,
-	"brightnessup": evdev.KEY_BRIGHTNESSUP, "brightnessdown": evdev.KEY_BRIGHTNESSDOWN,
-	"playpause": evdev.KEY_PLAYPAUSE, "play": evdev.KEY_PLAYPAUSE,
-	"nextsong": evdev.KEY_NEXTSONG, "next": evdev.KEY_NEXTSONG,
-	"previoussong": evdev.KEY_PREVIOUSSONG, "previous": evdev.KEY_PREVIOUSSONG,
-	"calc": evdev.KEY_CALC, "calculator": evdev.KEY_CALC,
-}
-
-// Reverse lookup map for O(1) code -> name lookups
-var codeToNameMap map[uint16]string
-
-func init() {
-	codeToNameMap = make(map[uint16]string, len(keyCodeMap))
-
-	// Build reverse lookup from keyCodeMap
-	for name, code := range keyCodeMap {
-		codeToNameMap[code] = name
-	}
-
-	// Override with canonical names (preferred) and add modifiers
-	canonicalOverrides := map[uint16]string{
-		evdev.KEY_ENTER:        "return",
-		evdev.KEY_ESC:          "esc",
-		evdev.KEY_SYSRQ:        "print",
-		evdev.KEY_LEFTMETA:     "super",
-		evdev.KEY_RIGHTMETA:    "super",
-		evdev.KEY_LEFTCTRL:     "ctrl",
-		evdev.KEY_RIGHTCTRL:    "ctrl",
-		evdev.KEY_LEFTALT:      "alt",
-		evdev.KEY_RIGHTALT:     "alt",
-		evdev.KEY_LEFTSHIFT:    "shift",
-		evdev.KEY_RIGHTSHIFT:   "shift",
-		evdev.KEY_PLAYPAUSE:    "playpause",
-		evdev.KEY_NEXTSONG:     "nextsong",
-		evdev.KEY_PREVIOUSSONG: "previoussong",
-		evdev.KEY_CALC:         "calc",
-	}
-	for code, name := range canonicalOverrides {
-		codeToNameMap[code] = name
-	}
-}
 
 type ModifierState struct {
 	Super bool
@@ -130,7 +51,7 @@ func (ts *TapState) Clear() {
 	ts.Unlock()
 }
 
-// Check returns the current candidate and clears it
+// Check returns true if the given code is the current tap candidate
 func (ts *TapState) Check(code uint16) bool {
 	ts.RLock()
 	defer ts.RUnlock()
@@ -167,10 +88,8 @@ func (ds *DoubleTapState) StartTimer(code uint16, interval float64, onTimeout fu
 	go func() {
 		select {
 		case <-ctx.Done():
-			// Timer cancelled (second tap arrived)
 			return
 		case <-time.After(time.Duration(interval) * time.Millisecond):
-			// Timeout - check if onrelease exists and execute
 			if onTimeout != nil {
 				onTimeout()
 			}
@@ -243,7 +162,6 @@ func New(parsedShortcuts map[string][]*config.ParsedShortcut) *Matcher {
 	tapShortcuts := make(map[uint16]string)
 	doubleTapShortcuts := make(map[uint16]*config.ParsedShortcut)
 
-	// Build shortcut lookup map and extract tap/doubletap shortcuts
 	for _, shortcutList := range parsedShortcuts {
 		for _, shortcut := range shortcutList {
 			key := ShortcutKey{
@@ -253,10 +171,8 @@ func New(parsedShortcuts map[string][]*config.ParsedShortcut) *Matcher {
 			}
 
 			if shortcut.Passthrough {
-				// Store in passthrough map (combo should be base key only)
 				passthroughShortcuts[key] = shortcut
 			} else {
-				// Store in regular map
 				shortcuts[key] = shortcut
 			}
 
@@ -282,7 +198,6 @@ func New(parsedShortcuts map[string][]*config.ParsedShortcut) *Matcher {
 			// Check for double-tap shortcuts (any key with .doubletap)
 			if shortcut.Behavior == config.BehaviorDoubleTap {
 				normalized := strings.ToLower(shortcut.KeyCombo)
-				// Handle modifier names that map to left/right variants
 				switch normalized {
 				case "super":
 					doubleTapShortcuts[evdev.KEY_LEFTMETA] = shortcut
@@ -297,7 +212,6 @@ func New(parsedShortcuts map[string][]*config.ParsedShortcut) *Matcher {
 					doubleTapShortcuts[evdev.KEY_LEFTSHIFT] = shortcut
 					doubleTapShortcuts[evdev.KEY_RIGHTSHIFT] = shortcut
 				default:
-					// Any other key
 					if keyCode := getKeyCode(normalized); keyCode != 0 {
 						doubleTapShortcuts[keyCode] = shortcut
 					}
@@ -346,7 +260,6 @@ func (m *Matcher) GetDoubleTapShortcut(code uint16) *config.ParsedShortcut {
 
 // CheckShortcut checks if a shortcut exists with given combo, behavior, and timing
 func (m *Matcher) CheckShortcut(combo string, behavior config.BehaviorMode, timing config.TimingMode) *config.ParsedShortcut {
-	// First check exact match in regular shortcuts
 	key := ShortcutKey{
 		Combo:    combo,
 		Behavior: behavior,
@@ -356,7 +269,7 @@ func (m *Matcher) CheckShortcut(combo string, behavior config.BehaviorMode, timi
 		return shortcut
 	}
 
-	// Then check passthrough shortcuts (strip modifiers, match base key only)
+	// Check passthrough shortcuts (strip modifiers, match base key only)
 	baseKey := extractBaseKey(combo)
 	passthroughKey := ShortcutKey{
 		Combo:    baseKey,
@@ -382,14 +295,12 @@ func extractBaseKey(combo string) string {
 
 // HasReleaseShortcut checks if any release shortcuts exist for a combo
 func (m *Matcher) HasReleaseShortcut(combo string) bool {
-	// Check regular shortcuts
 	for key := range m.shortcuts {
 		if key.Combo == combo && key.Timing == config.TimingRelease {
 			return true
 		}
 	}
 
-	// Check passthrough shortcuts (with base key)
 	baseKey := extractBaseKey(combo)
 	for key := range m.passthroughShortcuts {
 		if key.Combo == baseKey && key.Timing == config.TimingRelease {
@@ -407,7 +318,6 @@ func (m *Matcher) GetCurrentCombo(code uint16) string {
 		return codeToNameMap[code]
 	}
 
-	// Build combo without allocations
 	m.comboBuilder.Reset()
 	needPlus := false
 
@@ -567,6 +477,7 @@ func (m *Matcher) IsToggleActive(key string) bool {
 	return exists
 }
 
+// IsModifierKey returns true if the key code is a modifier key
 func IsModifierKey(code uint16) bool {
 	switch code {
 	case evdev.KEY_LEFTMETA, evdev.KEY_RIGHTMETA,
@@ -576,15 +487,4 @@ func IsModifierKey(code uint16) bool {
 		return true
 	}
 	return false
-}
-
-func getKeyCode(name string) uint16 {
-	if code, ok := keyCodeMap[strings.ToLower(name)]; ok {
-		return code
-	}
-	return 0
-}
-
-func GetKeyName(code uint16) string {
-	return codeToNameMap[code]
 }
