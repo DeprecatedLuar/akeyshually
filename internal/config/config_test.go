@@ -96,3 +96,23 @@ func TestDevicesFieldParses(t *testing.T) {
 		t.Errorf("KeyCombo = %q, want %q", shortcuts[0].KeyCombo, "btn_south")
 	}
 }
+
+func TestPressReleaseParsing(t *testing.T) {
+	ps, err := ParseShortcut("super+m.pressrelease", []interface{}{"mic-on", "mic-off"})
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if ps.Behavior != BehaviorPressRelease {
+		t.Errorf("Behavior = %v, want BehaviorPressRelease", ps.Behavior)
+	}
+	if len(ps.Commands) != 2 || ps.Commands[0] != "mic-on" || ps.Commands[1] != "mic-off" {
+		t.Errorf("Commands = %v, want [mic-on mic-off]", ps.Commands)
+	}
+}
+
+func TestPressReleaseSingleCommandRejected(t *testing.T) {
+	_, err := ParseShortcut("super+m.pressrelease", "mic-on")
+	if err == nil {
+		t.Fatal("expected error for single command, got nil")
+	}
+}

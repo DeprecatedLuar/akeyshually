@@ -40,6 +40,7 @@ const (
 	BehaviorRepeatToggle
 	BehaviorSwitch
 	BehaviorDoubleTap
+	BehaviorPressRelease
 )
 
 type TimingMode int
@@ -403,6 +404,8 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 			shortcut.Behavior = BehaviorSwitch
 		case "doubletap":
 			shortcut.Behavior = BehaviorDoubleTap
+		case "pressrelease":
+			shortcut.Behavior = BehaviorPressRelease
 		case "onrelease":
 			shortcut.Timing = TimingRelease
 		case "onpress":
@@ -415,11 +418,16 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 	}
 
 	// Validate combinations
-	if shortcut.Behavior == BehaviorSwitch {
+	switch shortcut.Behavior {
+	case BehaviorSwitch:
 		if len(shortcut.Commands) < 2 {
 			return nil, fmt.Errorf("switch behavior requires array of at least 2 commands")
 		}
-	} else {
+	case BehaviorPressRelease:
+		if len(shortcut.Commands) != 2 {
+			return nil, fmt.Errorf("pressrelease behavior requires exactly 2 commands")
+		}
+	default:
 		if len(shortcut.Commands) != 1 {
 			return nil, fmt.Errorf("%s behavior requires single command string", behaviorName(shortcut.Behavior))
 		}
@@ -446,6 +454,8 @@ func behaviorName(b BehaviorMode) string {
 		return "switch"
 	case BehaviorDoubleTap:
 		return "doubletap"
+	case BehaviorPressRelease:
+		return "pressrelease"
 	default:
 		return "unknown"
 	}
