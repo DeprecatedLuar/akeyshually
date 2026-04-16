@@ -50,6 +50,7 @@ type ParsedShortcut struct {
 	Interval    float64  // Milliseconds (0 = use default)
 	Commands    []string // Single command OR switch array
 	Passthrough bool     // Ignore modifiers when matching
+	AliasGroup  string   // Canonical key for shared state (e.g. "f1/f2.switch"), empty if not an alias
 }
 
 type Config struct {
@@ -100,6 +101,41 @@ func LoadFromPath(path string) (*Config, error) {
 	return loadFromFile(path)
 }
 
+// parseShortcutsInto parses a raw shortcut key (possibly with / aliases) into the map.
+// Aliases share an AliasGroup so switch state is shared across all combos in the group.
+func parseShortcutsInto(dst map[string][]*ParsedShortcut, key string, value interface{}) error {
+	aliases := strings.Split(key, "/")
+	aliasGroup := ""
+	if len(aliases) > 1 {
+		aliasGroup = key
+	}
+
+	// Extract dot-modifiers from last alias and apply to earlier ones
+	lastPart := aliases[len(aliases)-1]
+	dotIdx := strings.Index(lastPart, ".")
+	modifiers := ""
+	if dotIdx != -1 {
+		modifiers = lastPart[dotIdx:]
+	}
+
+	for i, alias := range aliases {
+		var fullKey string
+		if i == len(aliases)-1 {
+			fullKey = strings.TrimSpace(alias)
+		} else {
+			fullKey = strings.TrimSpace(alias) + modifiers
+		}
+
+		parsed, err := ParseShortcut(fullKey, value)
+		if err != nil {
+			return err
+		}
+		parsed.AliasGroup = aliasGroup
+		dst[parsed.KeyCombo] = append(dst[parsed.KeyCombo], parsed)
+	}
+	return nil
+}
+
 func loadFromFile(configPath string) (*Config, error) {
 	cfg := &Config{
 		Shortcuts: make(map[string]interface{}),
@@ -128,11 +164,9 @@ func loadFromFile(configPath string) (*Config, error) {
 	// Parse shortcuts
 	cfg.ParsedShortcuts = make(map[string][]*ParsedShortcut)
 	for key, value := range cfg.Shortcuts {
-		parsed, err := ParseShortcut(key, value)
-		if err != nil {
+		if err := parseShortcutsInto(cfg.ParsedShortcuts, key, value); err != nil {
 			return nil, fmt.Errorf("failed to parse shortcut '%s': %w", key, err)
 		}
-		cfg.ParsedShortcuts[parsed.KeyCombo] = append(cfg.ParsedShortcuts[parsed.KeyCombo], parsed)
 	}
 
 	return cfg, nil
@@ -177,12 +211,9 @@ func (c *Config) Merge(overlay *Config) {
 	// Rebuild ParsedShortcuts after merge
 	c.ParsedShortcuts = make(map[string][]*ParsedShortcut)
 	for key, value := range c.Shortcuts {
-		parsed, err := ParseShortcut(key, value)
-		if err != nil {
+		if err := parseShortcutsInto(c.ParsedShortcuts, key, value); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to parse shortcut '%s': %v\n", key, err)
-			continue
 		}
-		c.ParsedShortcuts[parsed.KeyCombo] = append(c.ParsedShortcuts[parsed.KeyCombo], parsed)
 	}
 }
 
