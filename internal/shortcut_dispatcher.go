@@ -142,7 +142,7 @@ func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *Loo
 
 			if normalShortcut != nil && holdShortcut != nil {
 				// Tap-vs-hold: defer decision until release or threshold
-				startTapHoldTimer(combo, normalShortcut, holdShortcut, cfg, loopState, m.GetComboCodes(code))
+				startTapHoldTimer(combo, normalShortcut, holdShortcut, cfg, loopState, m.GetComboCodes(code), virtual, m.GetCurrentModifiers())
 				pressMatched = true
 			} else if normalShortcut != nil {
 				LogMatch(combo, m.GetComboCodes(code))
@@ -208,7 +208,7 @@ func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *Loo
 			combo := m.GetCurrentCombo(code)
 
 			// Fire tap if released before hold threshold
-			if fireTapIfPending(combo, loopState, cfg, m.GetComboCodes(code)) {
+			if fireTapIfPending(combo, loopState, cfg, m.GetComboCodes(code), virtual, m.GetCurrentModifiers()) {
 				return true
 			}
 
@@ -295,6 +295,11 @@ func checkModifierAlone(modifiers matcher.ModifierState) bool {
 
 func executeShortcut(shortcut *config.ParsedShortcut, cfg *config.Config, virtual *evdev.InputDevice, heldModifiers matcher.ModifierState) {
 	if shortcut.IsRemap {
+		LogTrigger(">" + shortcut.RemapCombo)
+		if virtual == nil {
+			fmt.Fprintf(os.Stderr, "Remap error: no virtual device available\n")
+			return
+		}
 		if err := EmitKeyCombo(virtual, shortcut.RemapCombo, heldModifiers); err != nil {
 			fmt.Fprintf(os.Stderr, "Remap error: %v\n", err)
 		}
@@ -473,13 +478,11 @@ func executeReleaseShortcuts(combo string, m *matcher.Matcher, cfg *config.Confi
 
 // startTapHoldTimer starts the hold threshold timer when both normal and hold shortcuts exist
 // for the same combo. On timeout, fires hold. On early release, fireTapIfPending fires tap.
-func startTapHoldTimer(combo string, normalShortcut *config.ParsedShortcut, holdShortcut *config.ParsedShortcut, cfg *config.Config, state *LoopState, codes string) {
+func startTapHoldTimer(combo string, normalShortcut *config.ParsedShortcut, holdShortcut *config.ParsedShortcut, cfg *config.Config, state *LoopState, codes string, virtual *evdev.InputDevice, heldModifiers matcher.ModifierState) {
 	interval := holdShortcut.Interval
 	if interval == 0 {
 		interval = cfg.Settings.DefaultInterval
 	}
-
-	resolvedHoldCmd := cfg.ResolveCommand(holdShortcut.Commands[0])
 
 	state.mu.Lock()
 	if cancel, exists := state.tapHoldTimers[combo]; exists {
@@ -501,8 +504,7 @@ func startTapHoldTimer(combo string, normalShortcut *config.ParsedShortcut, hold
 				delete(state.tapHoldNormal, combo)
 				state.mu.Unlock()
 				LogMatch(combo+".hold", codes)
-				LogTrigger(resolvedHoldCmd)
-				Execute(resolvedHoldCmd, cfg)
+				executeShortcut(holdShortcut, cfg, virtual, heldModifiers)
 			} else {
 				state.mu.Unlock()
 			}
@@ -512,7 +514,7 @@ func startTapHoldTimer(combo string, normalShortcut *config.ParsedShortcut, hold
 
 // fireTapIfPending fires the tap (normal) shortcut if the key was released before the hold
 // threshold. Returns true if tap-vs-hold was handled (caller should suppress the event).
-func fireTapIfPending(combo string, state *LoopState, cfg *config.Config, codes string) bool {
+func fireTapIfPending(combo string, state *LoopState, cfg *config.Config, codes string, virtual *evdev.InputDevice, heldModifiers matcher.ModifierState) bool {
 	state.mu.Lock()
 	cancel, exists := state.tapHoldTimers[combo]
 	if !exists {
@@ -525,11 +527,9 @@ func fireTapIfPending(combo string, state *LoopState, cfg *config.Config, codes 
 	delete(state.tapHoldNormal, combo)
 	state.mu.Unlock()
 
-	if normalShortcut != nil && len(normalShortcut.Commands) > 0 {
-		resolvedCmd := cfg.ResolveCommand(normalShortcut.Commands[0])
+	if normalShortcut != nil {
 		LogMatch(combo, codes)
-		LogTrigger(resolvedCmd)
-		Execute(resolvedCmd, cfg)
+		executeShortcut(normalShortcut, cfg, virtual, heldModifiers)
 	}
 	return true
 }

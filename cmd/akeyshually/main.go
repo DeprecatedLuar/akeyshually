@@ -129,6 +129,14 @@ func startDaemon(configPath string) {
 		fmt.Printf("Monitoring %d mouse device(s) for tap cancellation\n", len(mice))
 	}
 
+	// Create shared key injector for remap output
+	injector, err := internal.CreateKeyInjector()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to create key injector: %v\n", err)
+		os.Exit(1)
+	}
+	defer evdev.DestroyDevice(injector)
+
 	// Create shared loop state
 	loopState := internal.NewLoopState()
 
@@ -144,7 +152,7 @@ func startDaemon(configPath string) {
 		name, _ := pair.Physical.Name()
 		go func(p internal.KeyboardPair, devName string) {
 			defer wg.Done()
-			handler := internal.CreateUnifiedHandler(m, cfg, loopState, p.Virtual)
+			handler := internal.CreateUnifiedHandler(m, cfg, loopState, injector)
 			if err := internal.ListenWithReconnect(p, handler, internal.FindKeyboards, devName); err != nil {
 				fmt.Fprintf(os.Stderr, "Listener error: %v\n", err)
 			}
@@ -158,7 +166,7 @@ func startDaemon(configPath string) {
 		name, _ := pair.Physical.Name()
 		go func(p internal.KeyboardPair, devName string) {
 			defer wg.Done()
-			handler := internal.CreateUnifiedHandler(m, cfg, loopState, p.Virtual)
+			handler := internal.CreateUnifiedHandler(m, cfg, loopState, injector)
 			if err := internal.ListenWithReconnect(p, handler, func() ([]internal.KeyboardPair, error) {
 				return internal.FindDeclaredDevices(declaredDeviceNames)
 			}, devName); err != nil {
