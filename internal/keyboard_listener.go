@@ -473,6 +473,40 @@ func CreateKeyInjector() (*evdev.InputDevice, error) {
 		map[evdev.EvType][]evdev.EvCode{evdev.EV_KEY: codes})
 }
 
+// EmitKeysDown emits keydown events for all keys in a combo and returns the codes pressed.
+// Skips modifier keys already held. Used for whileheld remap — caller must call EmitKeysUp to release.
+func EmitKeysDown(injector *evdev.InputDevice, combo string, heldModifiers matcher.ModifierState) []uint16 {
+	if injector == nil {
+		return nil
+	}
+	parts := strings.Split(combo, "+")
+	var codes []uint16
+	for _, part := range parts {
+		code, ok := matcher.ResolveKeyCode(strings.TrimSpace(part))
+		if !ok {
+			fmt.Fprintf(os.Stderr, "Remap error: unknown key %q\n", part)
+			continue
+		}
+		if !isModifierHeld(code, heldModifiers) {
+			injector.WriteOne(&evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(code), Value: 1})
+			codes = append(codes, code)
+		}
+	}
+	injector.WriteOne(&evdev.InputEvent{Type: evdev.EV_SYN, Code: evdev.SYN_REPORT, Value: 0})
+	return codes
+}
+
+// EmitKeysUp releases keys previously pressed by EmitKeysDown.
+func EmitKeysUp(injector *evdev.InputDevice, codes []uint16) {
+	if injector == nil {
+		return
+	}
+	for i := len(codes) - 1; i >= 0; i-- {
+		injector.WriteOne(&evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(codes[i]), Value: 0})
+	}
+	injector.WriteOne(&evdev.InputEvent{Type: evdev.EV_SYN, Code: evdev.SYN_REPORT, Value: 0})
+}
+
 // EmitKeyCombo emits a key combo on the injector device, skipping modifiers already held.
 func EmitKeyCombo(injector *evdev.InputDevice, combo string, heldModifiers matcher.ModifierState) error {
 	parts := strings.Split(combo, "+")
