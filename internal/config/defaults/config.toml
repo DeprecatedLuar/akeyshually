@@ -25,7 +25,6 @@ env_file = "~/.profile"
 
 #-[UTILS]------------------------------------
 
-"f9" = "notify-send 'f9 pressed'"
 "102nd" = "notify-send '102nd pressed'"
 "ctrl+mute" = "mute_mic"
 

@@ -12,6 +12,7 @@ import (
 	"github.com/deprecatedluar/akeyshually/internal"
 	"github.com/deprecatedluar/akeyshually/internal/commands/handler"
 	"github.com/deprecatedluar/akeyshually/internal/config"
+	"github.com/deprecatedluar/akeyshually/internal/matcher"
 )
 
 func main() {
@@ -97,23 +98,32 @@ func startDaemon(configPath string) {
 		os.Exit(1)
 	}
 
-	fmt.Printf("akeyshually started with %d keyboard(s):\n", len(keyboardPairs))
-	for _, pair := range keyboardPairs {
+	var declaredPairs []internal.KeyboardPair
+	if len(cfg.Settings.Devices) > 0 {
+		declaredPairs, err = internal.FindDeclaredDevices(cfg.Settings.Devices)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: declared device error: %v\n", err)
+		}
+	}
+
+	allPairs := append(keyboardPairs, declaredPairs...)
+	fmt.Printf("akeyshually started with %d keyboard(s):\n", len(allPairs))
+	for _, pair := range allPairs {
 		name, _ := pair.Physical.Name()
 		fmt.Printf("  - %s\n", name)
 	}
 
-	m := internal.New(cfg.ParsedShortcuts)
+	m := matcher.New(cfg.ParsedShortcuts)
 
 	// Create shared tap state and detect mice (if tap shortcuts exist)
-	var tapState *internal.TapState
-	var doubleTapState *internal.DoubleTapState
+	var tapState *matcher.TapState
+	var doubleTapState *matcher.DoubleTapState
 	mice, err := internal.FindMice()
 	if err == nil && len(mice) > 0 {
-		tapState = internal.NewTapState()
+		tapState = matcher.NewTapState()
 		m.SetTapState(tapState)
 
-		doubleTapState = internal.NewDoubleTapState()
+		doubleTapState = matcher.NewDoubleTapState()
 		m.SetDoubleTapState(doubleTapState)
 
 		fmt.Printf("Monitoring %d mouse device(s) for tap cancellation\n", len(mice))
@@ -128,18 +138,33 @@ func startDaemon(configPath string) {
 
 	var wg sync.WaitGroup
 
-	// Launch keyboard listeners with unified handler
+	// Launch keyboard listeners with unified handler and reconnect support
 	for _, pair := range keyboardPairs {
 		wg.Add(1)
-		go func(p internal.KeyboardPair) {
+		name, _ := pair.Physical.Name()
+		go func(p internal.KeyboardPair, devName string) {
 			defer wg.Done()
-
 			handler := internal.CreateUnifiedHandler(m, cfg, loopState)
-
-			if err := internal.Listen(p, handler); err != nil {
+			if err := internal.ListenWithReconnect(p, handler, internal.FindKeyboards, devName); err != nil {
 				fmt.Fprintf(os.Stderr, "Listener error: %v\n", err)
 			}
-		}(pair)
+		}(pair, name)
+	}
+
+	// Launch declared device listeners
+	declaredDeviceNames := cfg.Settings.Devices
+	for _, pair := range declaredPairs {
+		wg.Add(1)
+		name, _ := pair.Physical.Name()
+		go func(p internal.KeyboardPair, devName string) {
+			defer wg.Done()
+			handler := internal.CreateUnifiedHandler(m, cfg, loopState)
+			if err := internal.ListenWithReconnect(p, handler, func() ([]internal.KeyboardPair, error) {
+				return internal.FindDeclaredDevices(declaredDeviceNames)
+			}, devName); err != nil {
+				fmt.Fprintf(os.Stderr, "Listener error: %v\n", err)
+			}
+		}(pair, name)
 	}
 
 	// Launch mouse listeners (if tapState is active)
@@ -164,7 +189,7 @@ func startDaemon(configPath string) {
 	go func() {
 		<-sigChan
 		fmt.Fprintf(os.Stderr, "\nShutting down...\n")
-		for _, pair := range keyboardPairs {
+		for _, pair := range allPairs {
 			internal.Cleanup(pair)
 		}
 		// Clean up pidfile if running as daemon
