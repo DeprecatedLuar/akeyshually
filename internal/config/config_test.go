@@ -68,6 +68,20 @@ func TestMergeDeduplicatesDevices(t *testing.T) {
 	}
 }
 
+func TestRemapParsing(t *testing.T) {
+	dst := make(map[string][]*ParsedShortcut)
+	if err := parseShortcutsInto(dst, "btn_0", ">ctrl+z"); err != nil {
+		t.Fatalf("remap shortcut should parse without error: %v", err)
+	}
+	s := dst["btn_0"][0]
+	if !s.IsRemap {
+		t.Errorf("IsRemap = false, want true")
+	}
+	if s.RemapCombo != "ctrl+z" {
+		t.Errorf("RemapCombo = %q, want %q", s.RemapCombo, "ctrl+z")
+	}
+}
+
 func TestDevicesFieldParses(t *testing.T) {
 	dst := make(map[string][]*ParsedShortcut)
 	err := parseShortcutsInto(dst, "btn_south", "notify-send test")

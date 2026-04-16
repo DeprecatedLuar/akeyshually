@@ -463,8 +463,18 @@ func ListenMouse(dev *evdev.InputDevice, handler MouseButtonHandler) error {
 	}
 }
 
-// EmitKeyCombo emits a key combo on the virtual device, skipping modifiers already held.
-func EmitKeyCombo(virtual *evdev.InputDevice, combo string, heldModifiers matcher.ModifierState) error {
+// CreateKeyInjector creates a shared uinput keyboard with full key capabilities for remap injection.
+func CreateKeyInjector() (*evdev.InputDevice, error) {
+	codes := make([]evdev.EvCode, 255)
+	for i := range codes {
+		codes[i] = evdev.EvCode(i + 1)
+	}
+	return evdev.CreateDevice("akeyshually-injector", evdev.InputID{BusType: 0x03, Vendor: 0x1, Product: 0x1, Version: 1},
+		map[evdev.EvType][]evdev.EvCode{evdev.EV_KEY: codes})
+}
+
+// EmitKeyCombo emits a key combo on the injector device, skipping modifiers already held.
+func EmitKeyCombo(injector *evdev.InputDevice, combo string, heldModifiers matcher.ModifierState) error {
 	parts := strings.Split(combo, "+")
 
 	var modCodes []uint16
@@ -484,17 +494,17 @@ func EmitKeyCombo(virtual *evdev.InputDevice, combo string, heldModifiers matche
 
 	for _, code := range modCodes {
 		if !isModifierHeld(code, heldModifiers) {
-			virtual.WriteOne(&evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(code), Value: 1})
+			injector.WriteOne(&evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(code), Value: 1})
 		}
 	}
-	virtual.WriteOne(&evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(finalCode), Value: 1})
-	virtual.WriteOne(&evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(finalCode), Value: 0})
+	injector.WriteOne(&evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(finalCode), Value: 1})
+	injector.WriteOne(&evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(finalCode), Value: 0})
 	for i := len(modCodes) - 1; i >= 0; i-- {
 		if !isModifierHeld(modCodes[i], heldModifiers) {
-			virtual.WriteOne(&evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(modCodes[i]), Value: 0})
+			injector.WriteOne(&evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(modCodes[i]), Value: 0})
 		}
 	}
-	virtual.WriteOne(&evdev.InputEvent{Type: evdev.EV_SYN, Code: evdev.SYN_REPORT, Value: 0})
+	injector.WriteOne(&evdev.InputEvent{Type: evdev.EV_SYN, Code: evdev.SYN_REPORT, Value: 0})
 	return nil
 }
 
