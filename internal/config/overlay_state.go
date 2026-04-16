@@ -1,31 +1,26 @@
-package internal
+package config
 
 import (
 	"bufio"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/deprecatedluar/akeyshually/internal/config"
 )
 
-// GetEnabledStatePath returns the path to the .enabled state file
 func GetEnabledStatePath() (string, error) {
-	configDir, err := config.GetConfigDir()
+	configDir, err := GetConfigDir()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(configDir, ".enabled"), nil
 }
 
-// ReadEnabledState reads the list of enabled overlay filenames
 func ReadEnabledState() ([]string, error) {
 	enabledPath, err := GetEnabledStatePath()
 	if err != nil {
 		return nil, err
 	}
 
-	// If file doesn't exist, return empty list
 	if _, err := os.Stat(enabledPath); os.IsNotExist(err) {
 		return []string{}, nil
 	}
@@ -48,23 +43,15 @@ func ReadEnabledState() ([]string, error) {
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-
-	return files, nil
+	return files, scanner.Err()
 }
 
-// WriteEnabledState atomically writes the list of enabled overlays
 func WriteEnabledState(files []string) error {
 	enabledPath, err := GetEnabledStatePath()
 	if err != nil {
 		return err
 	}
 
-	tmpPath := enabledPath + ".tmp"
-
-	// Deduplicate files
 	seen := make(map[string]bool)
 	var unique []string
 	for _, f := range files {
@@ -79,6 +66,7 @@ func WriteEnabledState(files []string) error {
 		content += "\n"
 	}
 
+	tmpPath := enabledPath + ".tmp"
 	if err := os.WriteFile(tmpPath, []byte(content), 0644); err != nil {
 		return err
 	}
@@ -86,25 +74,21 @@ func WriteEnabledState(files []string) error {
 	return os.Rename(tmpPath, enabledPath)
 }
 
-// AddOverlay adds an overlay to the enabled list
 func AddOverlay(filename string) error {
 	files, err := ReadEnabledState()
 	if err != nil {
 		return err
 	}
 
-	// Check if already enabled
 	for _, f := range files {
 		if f == filename {
 			return nil
 		}
 	}
 
-	files = append(files, filename)
-	return WriteEnabledState(files)
+	return WriteEnabledState(append(files, filename))
 }
 
-// RemoveOverlay removes an overlay from the enabled list
 func RemoveOverlay(filename string) error {
 	files, err := ReadEnabledState()
 	if err != nil {
@@ -121,7 +105,6 @@ func RemoveOverlay(filename string) error {
 	return WriteEnabledState(filtered)
 }
 
-// ClearAllOverlays removes all enabled overlays
 func ClearAllOverlays() error {
 	return WriteEnabledState([]string{})
 }

@@ -11,6 +11,8 @@ var (
 	loggingEnabled bool
 )
 
+const centisecondNs = 10_000_000 // nanoseconds per centisecond (for timestamp display)
+
 func SetDebug(enabled bool) {
 	debugEnabled = enabled
 	loggingEnabled = enabled // debug implies logging
@@ -30,7 +32,7 @@ func IsLoggingEnabled() bool {
 
 func timestamp() string {
 	t := time.Now()
-	return fmt.Sprintf("[%s:%02d]", t.Format("15:04:05"), t.Nanosecond()/10000000)
+	return fmt.Sprintf("[%s:%02d]", t.Format("15:04:05"), t.Nanosecond()/centisecondNs)
 }
 
 // LogKey logs every key press (muted/dim)

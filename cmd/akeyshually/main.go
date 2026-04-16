@@ -69,7 +69,7 @@ func startDaemon(configPath string) {
 		}
 	} else {
 		// Default config with overlays
-		enabledOverlays, err := internal.ReadEnabledState()
+		enabledOverlays, err := config.ReadEnabledState()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to read enabled state: %v\n", err)
 			enabledOverlays = []string{}
@@ -144,7 +144,7 @@ func startDaemon(configPath string) {
 		name, _ := pair.Physical.Name()
 		go func(p internal.KeyboardPair, devName string) {
 			defer wg.Done()
-			handler := internal.CreateUnifiedHandler(m, cfg, loopState)
+			handler := internal.CreateUnifiedHandler(m, cfg, loopState, p.Virtual)
 			if err := internal.ListenWithReconnect(p, handler, internal.FindKeyboards, devName); err != nil {
 				fmt.Fprintf(os.Stderr, "Listener error: %v\n", err)
 			}
@@ -158,7 +158,7 @@ func startDaemon(configPath string) {
 		name, _ := pair.Physical.Name()
 		go func(p internal.KeyboardPair, devName string) {
 			defer wg.Done()
-			handler := internal.CreateUnifiedHandler(m, cfg, loopState)
+			handler := internal.CreateUnifiedHandler(m, cfg, loopState, p.Virtual)
 			if err := internal.ListenWithReconnect(p, handler, func() ([]internal.KeyboardPair, error) {
 				return internal.FindDeclaredDevices(declaredDeviceNames)
 			}, devName); err != nil {

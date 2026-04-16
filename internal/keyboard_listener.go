@@ -11,6 +11,11 @@ import (
 	evdev "github.com/holoplot/go-evdev"
 )
 
+const (
+	reconnectMaxAttempts = 30
+	reconnectInterval    = 2 * time.Second
+)
+
 type KeyboardPair struct {
 	Physical *evdev.InputDevice
 	Virtual  *evdev.InputDevice
@@ -166,25 +171,17 @@ func isButtonDevice(dev *evdev.InputDevice) bool {
 	return false
 }
 
-func hasKeyCapability(dev *evdev.InputDevice) bool {
-	types := dev.CapableTypes()
-	for _, t := range types {
-		if t == evdev.EV_KEY {
+func hasCapability(dev *evdev.InputDevice, typ evdev.EvType) bool {
+	for _, t := range dev.CapableTypes() {
+		if t == typ {
 			return true
 		}
 	}
 	return false
 }
 
-func hasRepCapability(dev *evdev.InputDevice) bool {
-	types := dev.CapableTypes()
-	for _, t := range types {
-		if t == evdev.EV_REP {
-			return true
-		}
-	}
-	return false
-}
+func hasKeyCapability(dev *evdev.InputDevice) bool { return hasCapability(dev, evdev.EV_KEY) }
+func hasRepCapability(dev *evdev.InputDevice) bool { return hasCapability(dev, evdev.EV_REP) }
 
 func isRemapperVirtual(dev *evdev.InputDevice) bool {
 	name, _ := dev.Name()
@@ -335,12 +332,12 @@ func ListenWithReconnect(pair KeyboardPair, handler KeyHandler, findFn func() ([
 		LogDebug("Device %q disconnected, attempting reconnect...", deviceName)
 
 		var newPair *KeyboardPair
-		for attempt := 1; attempt <= 30; attempt++ {
-			time.Sleep(2 * time.Second)
+		for attempt := 1; attempt <= reconnectMaxAttempts; attempt++ {
+			time.Sleep(reconnectInterval)
 
 			pairs, err := findFn()
 			if err != nil {
-				LogDebug("Reconnect attempt %d/30: %v", attempt, err)
+				LogDebug("Reconnect attempt %d/%d: %v", attempt, reconnectMaxAttempts, err)
 				continue
 			}
 
@@ -357,7 +354,7 @@ func ListenWithReconnect(pair KeyboardPair, handler KeyHandler, findFn func() ([
 			if newPair != nil {
 				break
 			}
-			LogDebug("Reconnect attempt %d/30: %q not found", attempt, deviceName)
+			LogDebug("Reconnect attempt %d/%d: %q not found", attempt, reconnectMaxAttempts, deviceName)
 		}
 
 		if newPair == nil {
@@ -464,6 +461,55 @@ func ListenMouse(dev *evdev.InputDevice, handler MouseButtonHandler) error {
 			handler()
 		}
 	}
+}
+
+// EmitKeyCombo emits a key combo on the virtual device, skipping modifiers already held.
+func EmitKeyCombo(virtual *evdev.InputDevice, combo string, heldModifiers matcher.ModifierState) error {
+	parts := strings.Split(combo, "+")
+
+	var modCodes []uint16
+	var finalCode uint16
+
+	for i, part := range parts {
+		code, ok := matcher.ResolveKeyCode(strings.TrimSpace(part))
+		if !ok {
+			return fmt.Errorf("unknown key: %q", part)
+		}
+		if i < len(parts)-1 {
+			modCodes = append(modCodes, code)
+		} else {
+			finalCode = code
+		}
+	}
+
+	for _, code := range modCodes {
+		if !isModifierHeld(code, heldModifiers) {
+			virtual.WriteOne(&evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(code), Value: 1})
+		}
+	}
+	virtual.WriteOne(&evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(finalCode), Value: 1})
+	virtual.WriteOne(&evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(finalCode), Value: 0})
+	for i := len(modCodes) - 1; i >= 0; i-- {
+		if !isModifierHeld(modCodes[i], heldModifiers) {
+			virtual.WriteOne(&evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(modCodes[i]), Value: 0})
+		}
+	}
+	virtual.WriteOne(&evdev.InputEvent{Type: evdev.EV_SYN, Code: evdev.SYN_REPORT, Value: 0})
+	return nil
+}
+
+func isModifierHeld(code uint16, held matcher.ModifierState) bool {
+	switch evdev.EvCode(code) {
+	case evdev.KEY_LEFTMETA, evdev.KEY_RIGHTMETA:
+		return held.Super
+	case evdev.KEY_LEFTCTRL, evdev.KEY_RIGHTCTRL:
+		return held.Ctrl
+	case evdev.KEY_LEFTALT, evdev.KEY_RIGHTALT:
+		return held.Alt
+	case evdev.KEY_LEFTSHIFT, evdev.KEY_RIGHTSHIFT:
+		return held.Shift
+	}
+	return false
 }
 
 // IsMediaKey checks if a keycode is a media key (volume, brightness, playback)

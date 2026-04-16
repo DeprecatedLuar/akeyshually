@@ -7,7 +7,21 @@ import (
 	"syscall"
 
 	"github.com/deprecatedluar/akeyshually/internal"
+	"github.com/deprecatedluar/akeyshually/internal/config"
 )
+
+func restartIfRunning() {
+	pid, err := internal.GetRunningDaemonPid()
+	if err == nil && pid > 0 {
+		Restart()
+	}
+}
+
+func notifyOverlayChange(message string) {
+	if cfg, err := config.Load(); err == nil && cfg.Settings.NotifyOnOverlayChange {
+		internal.NotifyInfo("akeyshually", message)
+	}
+}
 
 // Restart implements the restart command
 // Stops the daemon and then starts it again (silent operation)

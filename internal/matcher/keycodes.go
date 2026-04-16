@@ -2,6 +2,7 @@ package matcher
 
 import (
 	"fmt"
+	"strings"
 
 	evdev "github.com/holoplot/go-evdev"
 )
@@ -49,6 +50,9 @@ var keyCodeMap = map[string]uint16{
 	"nextsong":      evdev.KEY_NEXTSONG, "next": evdev.KEY_NEXTSONG,
 	"previoussong":  evdev.KEY_PREVIOUSSONG, "previous": evdev.KEY_PREVIOUSSONG,
 	"calc":          evdev.KEY_CALC, "calculator": evdev.KEY_CALC,
+	// Modifier keys
+	"super": evdev.KEY_LEFTMETA, "ctrl": evdev.KEY_LEFTCTRL,
+	"alt":   evdev.KEY_LEFTALT,  "shift": evdev.KEY_LEFTSHIFT,
 	// Generic/tablet buttons (BTN_0..BTN_9)
 	"btn_0": evdev.BTN_0, "btn_1": evdev.BTN_1, "btn_2": evdev.BTN_2, "btn_3": evdev.BTN_3,
 	"btn_4": evdev.BTN_4, "btn_5": evdev.BTN_5, "btn_6": evdev.BTN_6, "btn_7": evdev.BTN_7,
@@ -138,6 +142,12 @@ func getKeyCode(name string) uint16 {
 		return code
 	}
 	return 0
+}
+
+// ResolveKeyCode looks up a key name and returns its evdev code.
+func ResolveKeyCode(name string) (uint16, bool) {
+	code, ok := keyCodeMap[strings.ToLower(name)]
+	return code, ok
 }
 
 // GetKeyName returns the canonical name for a key code

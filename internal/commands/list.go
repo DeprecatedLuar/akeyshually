@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/deprecatedluar/akeyshually/internal"
 	"github.com/deprecatedluar/akeyshually/internal/config"
 )
 
@@ -17,7 +16,7 @@ func List() {
 		return
 	}
 
-	enabled, err := internal.ReadEnabledState()
+	enabled, err := config.ReadEnabledState()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to read enabled state: %v\n", err)
 		enabled = []string{}
