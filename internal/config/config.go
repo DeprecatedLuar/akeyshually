@@ -16,13 +16,18 @@ import (
 var embeddedConfigs embed.FS
 
 type Settings struct {
-	DefaultInterval       float64  `toml:"default_interval"`        // >= 10 = milliseconds, < 10 = seconds (default: 100)
+	DefaultInterval       float64  `toml:"default_interval"`        // >= 10 = milliseconds, < 10 = seconds (default: 150ms)
 	DisableMediaKeys      bool     `toml:"disable_media_keys"`      // Forward media keys to system (default: false)
 	Shell                 string   `toml:"shell"`                   // Optional: override $SHELL
 	EnvFile               string   `toml:"env_file"`                // Optional: source before commands
 	NotifyOnOverlayChange bool     `toml:"notify_on_overlay_change"` // Desktop notifications for overlay changes
 	Devices               []string `toml:"devices"`                 // Device name substrings to grab (case-insensitive)
 }
+
+const (
+	defaultIntervalMs          = 150.0 // milliseconds, used when default_interval is not set in config
+	normalizeIntervalThreshold = 10.0  // values below this are treated as seconds, not milliseconds
+)
 
 type BehaviorMode int
 
@@ -52,6 +57,8 @@ type ParsedShortcut struct {
 	Commands    []string // Single command OR switch array
 	Passthrough bool     // Ignore modifiers when matching
 	AliasGroup  string   // Canonical key for shared state (e.g. "f1/f2.switch"), empty if not an alias
+	IsRemap     bool     // true if value starts with ">"
+	RemapCombo  string   // the combo string after ">", e.g. "ctrl+z"
 }
 
 type Config struct {
@@ -67,7 +74,7 @@ type Config struct {
 // >= 10: treat as milliseconds (legacy behavior)
 // < 10: treat as seconds, convert to milliseconds
 func normalizeInterval(value float64) float64 {
-	if value >= 10 {
+	if value >= normalizeIntervalThreshold {
 		return value // Already in milliseconds
 	}
 	return value * 1000 // Convert seconds to milliseconds
@@ -157,7 +164,7 @@ func loadFromFile(configPath string) (*Config, error) {
 
 	// Set default loop interval if not specified
 	if cfg.Settings.DefaultInterval == 0 {
-		cfg.Settings.DefaultInterval = 150
+		cfg.Settings.DefaultInterval = defaultIntervalMs
 	} else {
 		cfg.Settings.DefaultInterval = normalizeInterval(cfg.Settings.DefaultInterval)
 	}
@@ -339,6 +346,16 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 		shortcut.Commands = commands
 	default:
 		return nil, fmt.Errorf("value must be string or array of strings")
+	}
+
+	// Detect remap syntax: value starting with ">"
+	if len(shortcut.Commands) == 1 && strings.HasPrefix(shortcut.Commands[0], ">") {
+		remapTarget := shortcut.Commands[0][1:]
+		if remapTarget == "" {
+			return nil, fmt.Errorf("remap target cannot be empty")
+		}
+		shortcut.IsRemap = true
+		shortcut.RemapCombo = normalizeKeyCombo(remapTarget)
 	}
 
 	// Parse modifiers (behavior and timing)

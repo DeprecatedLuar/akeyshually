@@ -3,12 +3,14 @@ package internal
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
 
 	"github.com/deprecatedluar/akeyshually/internal/config"
 	"github.com/deprecatedluar/akeyshually/internal/matcher"
+	evdev "github.com/holoplot/go-evdev"
 )
 
 type LoopState struct {
@@ -18,6 +20,19 @@ type LoopState struct {
 	holdTimers    map[string]context.CancelFunc // hold: combo -> cancel timer
 	tapHoldTimers map[string]context.CancelFunc         // tap-vs-hold: combo -> cancel hold timer
 	tapHoldNormal map[string]*config.ParsedShortcut     // tap-vs-hold: combo -> normal shortcut to fire on tap
+}
+
+func runTickerLoop(ctx context.Context, interval float64, fn func()) {
+	ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			fn()
+		}
+	}
 }
 
 func NewLoopState() *LoopState {
@@ -30,7 +45,7 @@ func NewLoopState() *LoopState {
 	}
 }
 
-func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *LoopState) KeyHandler {
+func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *LoopState, virtual *evdev.InputDevice) KeyHandler {
 	bufferedKeys := make(map[uint16]bool)
 
 	return func(code uint16, value int32) bool {
@@ -131,7 +146,7 @@ func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *Loo
 				pressMatched = true
 			} else if normalShortcut != nil {
 				LogMatch(combo, m.GetComboCodes(code))
-				executeShortcut(normalShortcut, cfg)
+				executeShortcut(normalShortcut, cfg, virtual, m.GetCurrentModifiers())
 				pressMatched = true
 			} else if holdShortcut != nil {
 				LogMatch(combo+".hold", m.GetComboCodes(code))
@@ -252,7 +267,7 @@ func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *Loo
 				delete(bufferedKeys, code)
 
 				// Execute release shortcuts
-				executeReleaseShortcuts(combo, m, cfg, code)
+				executeReleaseShortcuts(combo, m, cfg, code, virtual, m.GetCurrentModifiers())
 				return true // Suppress release
 			}
 		}
@@ -278,7 +293,13 @@ func checkModifierAlone(modifiers matcher.ModifierState) bool {
 	return count == 1
 }
 
-func executeShortcut(shortcut *config.ParsedShortcut, cfg *config.Config) {
+func executeShortcut(shortcut *config.ParsedShortcut, cfg *config.Config, virtual *evdev.InputDevice, heldModifiers matcher.ModifierState) {
+	if shortcut.IsRemap {
+		if err := EmitKeyCombo(virtual, shortcut.RemapCombo, heldModifiers); err != nil {
+			fmt.Fprintf(os.Stderr, "Remap error: %v\n", err)
+		}
+		return
+	}
 	if len(shortcut.Commands) == 0 {
 		return
 	}
@@ -307,19 +328,7 @@ func startLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Config
 	resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
 	LogTrigger(resolvedCmd)
 
-	go func() {
-		ticker := time.NewTicker(time.Duration(interval * 1e6)) // Convert ms to nanoseconds
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				Execute(resolvedCmd, cfg)
-			}
-		}
-	}()
+	go runTickerLoop(ctx, interval, func() { Execute(resolvedCmd, cfg) })
 }
 
 func stopLoop(combo string, state *LoopState) {
@@ -382,7 +391,7 @@ func startHoldTimer(combo string, shortcut *config.ParsedShortcut, cfg *config.C
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(time.Duration(interval * 1e6)):
+		case <-time.After(time.Duration(interval) * time.Millisecond):
 			state.mu.Lock()
 			delete(state.holdTimers, combo)
 			state.mu.Unlock()
@@ -421,19 +430,7 @@ func toggleLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Confi
 		resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
 		LogTrigger(resolvedCmd)
 
-		go func() {
-			ticker := time.NewTicker(time.Duration(interval * 1e6)) // Convert ms to nanoseconds
-			defer ticker.Stop()
-
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-ticker.C:
-					Execute(resolvedCmd, cfg)
-				}
-			}
-		}()
+		go runTickerLoop(ctx, interval, func() { Execute(resolvedCmd, cfg) })
 	}
 }
 
@@ -450,28 +447,24 @@ func executeSwitchShortcut(combo string, shortcut *config.ParsedShortcut, m *mat
 	Execute(resolvedCmd, cfg)
 }
 
-func executeReleaseShortcuts(combo string, m *matcher.Matcher, cfg *config.Config, code uint16) {
+func executeReleaseShortcuts(combo string, m *matcher.Matcher, cfg *config.Config, code uint16, virtual *evdev.InputDevice, heldModifiers matcher.ModifierState) {
 	codes := m.GetComboCodes(code)
 
-	// Check normal release
 	if shortcut := m.CheckShortcut(combo, config.BehaviorNormal, config.TimingRelease); shortcut != nil {
 		LogMatch(combo+".onrelease", codes)
-		executeShortcut(shortcut, cfg)
+		executeShortcut(shortcut, cfg, virtual, heldModifiers)
 	}
 
-	// Check repeat-whileheld release (edge case)
 	if shortcut := m.CheckShortcut(combo, config.BehaviorRepeatWhileHeld, config.TimingRelease); shortcut != nil {
 		LogMatch(combo+".repeat-whileheld.onrelease", codes)
-		executeShortcut(shortcut, cfg)
+		executeShortcut(shortcut, cfg, virtual, heldModifiers)
 	}
 
-	// Check repeat-toggle release
 	if shortcut := m.CheckShortcut(combo, config.BehaviorRepeatToggle, config.TimingRelease); shortcut != nil {
 		LogMatch(combo+".repeat-toggle.onrelease", codes)
 		toggleLoop(combo, shortcut, cfg, m, nil)
 	}
 
-	// Check switch release
 	if shortcut := m.CheckShortcut(combo, config.BehaviorSwitch, config.TimingRelease); shortcut != nil {
 		LogMatch(combo+".switch.onrelease", codes)
 		executeSwitchShortcut(combo, shortcut, m, cfg)
@@ -501,7 +494,7 @@ func startTapHoldTimer(combo string, normalShortcut *config.ParsedShortcut, hold
 		select {
 		case <-ctx.Done():
 			return // Key released before threshold — tap handled by fireTapIfPending
-		case <-time.After(time.Duration(interval * 1e6)):
+		case <-time.After(time.Duration(interval) * time.Millisecond):
 			state.mu.Lock()
 			if _, stillPending := state.tapHoldTimers[combo]; stillPending {
 				delete(state.tapHoldTimers, combo)

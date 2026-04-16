@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/deprecatedluar/akeyshually/internal"
 	"github.com/deprecatedluar/akeyshually/internal/config"
 )
 
@@ -31,19 +30,11 @@ func Enable(filename string) {
 	}
 
 	// Add to enabled state
-	if err := internal.AddOverlay(filename); err != nil {
+	if err := config.AddOverlay(filename); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to enable overlay: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Notify if configured
-	if cfg, err := config.Load(); err == nil && cfg.Settings.NotifyOnOverlayChange {
-		internal.NotifyInfo("akeyshually", fmt.Sprintf("Enabled %s", filename))
-	}
-
-	// Restart daemon only if it's running
-	pid, err := internal.GetRunningDaemonPid()
-	if err == nil && pid > 0 {
-		Restart()
-	}
+	notifyOverlayChange(fmt.Sprintf("Enabled %s", filename))
+	restartIfRunning()
 }
