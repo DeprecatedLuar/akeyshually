@@ -22,6 +22,8 @@ I made akeyshually to not only have my configs in a single git tracked file, but
 
 ---
 
+# THE README IS LIKE 6 MONTHS OUTDATED. I'll re-write everything when I get some time
+
 ## The cool features you've never seen before
 
 <img src="other/assets/ermactually.jpeg" alt="Actually..." align="right" width="200"/>
