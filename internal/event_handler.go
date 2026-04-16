@@ -427,7 +427,11 @@ func toggleLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Confi
 }
 
 func executeSwitchShortcut(combo string, shortcut *config.ParsedShortcut, m *Matcher, cfg *config.Config) {
-	key := fmt.Sprintf("%s.switch.%d", combo, shortcut.Timing)
+	groupKey := combo
+	if shortcut.AliasGroup != "" {
+		groupKey = shortcut.AliasGroup
+	}
+	key := fmt.Sprintf("%s.switch.%d", groupKey, shortcut.Timing)
 	command := m.GetNextSwitchCommand(key, shortcut.Commands)
 	resolvedCmd := cfg.ResolveCommand(command)
 
