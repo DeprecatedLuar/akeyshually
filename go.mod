@@ -4,8 +4,7 @@ go 1.25.1
 
 require (
 	github.com/BurntSushi/toml v1.5.0
-	github.com/DeprecatedLuar/gohelp-luar v0.1.0
-	github.com/DeprecatedLuar/the-satellite/the-lib v0.0.0-20251112110819-0c6893dc3dc4
+	github.com/DeprecatedLuar/gohelp-luar v0.2.0
 	github.com/holoplot/go-evdev v0.0.0-20250804134636-ab1d56a1fe83
 )
 

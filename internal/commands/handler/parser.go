@@ -16,7 +16,7 @@ type ParseResult struct {
 
 // Parse handles all CLI argument parsing and command execution
 // Returns ParseResult with foreground flag and optional config path
-func Parse(args []string) ParseResult {
+func Parse(args []string, version, githubRepo string) ParseResult {
 	// Process flags first, collect remaining args
 	var remaining []string
 	var configPath string
@@ -56,7 +56,10 @@ func Parse(args []string) ParseResult {
 		commands.Restart()
 		os.Exit(0)
 	case "update":
-		commands.Update()
+		if err := commands.HandleUpdate(version, githubRepo); err != nil {
+			fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
+			os.Exit(1)
+		}
 		os.Exit(0)
 	case "enable":
 		if len(remaining) < 2 {
@@ -96,7 +99,7 @@ func Parse(args []string) ParseResult {
 		commands.Help(remaining[1:]...)
 		os.Exit(0)
 	case "version", "-v", "--version":
-		commands.Version()
+		commands.Version(version)
 		os.Exit(0)
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", command)

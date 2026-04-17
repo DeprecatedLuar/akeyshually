@@ -4,8 +4,11 @@ import (
 	"testing"
 )
 
+const testVersion = "dev"
+const testRepo = "DeprecatedLuar/akeyshually"
+
 func TestParseNoArgs(t *testing.T) {
-	result := Parse([]string{})
+	result := Parse([]string{}, testVersion, testRepo)
 	if !result.RunForeground {
 		t.Error("expected RunForeground=true with no args")
 	}
@@ -15,7 +18,7 @@ func TestParseNoArgs(t *testing.T) {
 }
 
 func TestParseConfigShortFlag(t *testing.T) {
-	result := Parse([]string{"-c", "myconfig.toml"})
+	result := Parse([]string{"-c", "myconfig.toml"}, testVersion, testRepo)
 	if !result.RunForeground {
 		t.Error("expected RunForeground=true")
 	}
@@ -25,21 +28,21 @@ func TestParseConfigShortFlag(t *testing.T) {
 }
 
 func TestParseConfigLongFlag(t *testing.T) {
-	result := Parse([]string{"--config", "myconfig.toml"})
+	result := Parse([]string{"--config", "myconfig.toml"}, testVersion, testRepo)
 	if result.ConfigPath != "myconfig.toml" {
 		t.Errorf("expected ConfigPath=%q, got %q", "myconfig.toml", result.ConfigPath)
 	}
 }
 
 func TestParseDebugFlag(t *testing.T) {
-	result := Parse([]string{"--debug"})
+	result := Parse([]string{"--debug"}, testVersion, testRepo)
 	if !result.RunForeground {
 		t.Error("expected RunForeground=true with only --debug")
 	}
 }
 
 func TestParseDebugWithConfig(t *testing.T) {
-	result := Parse([]string{"--debug", "-c", "custom.toml"})
+	result := Parse([]string{"--debug", "-c", "custom.toml"}, testVersion, testRepo)
 	if result.ConfigPath != "custom.toml" {
 		t.Errorf("expected ConfigPath=%q, got %q", "custom.toml", result.ConfigPath)
 	}
@@ -49,7 +52,7 @@ func TestParseDebugWithConfig(t *testing.T) {
 }
 
 func TestParseConfigFlagBeforeDebug(t *testing.T) {
-	result := Parse([]string{"-c", "first.toml", "--debug"})
+	result := Parse([]string{"-c", "first.toml", "--debug"}, testVersion, testRepo)
 	if result.ConfigPath != "first.toml" {
 		t.Errorf("expected ConfigPath=%q, got %q", "first.toml", result.ConfigPath)
 	}
