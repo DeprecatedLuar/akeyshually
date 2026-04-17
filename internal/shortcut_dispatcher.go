@@ -14,6 +14,14 @@ import (
 	evdev "github.com/holoplot/go-evdev"
 )
 
+const (
+	twhIdle       = 0 // no gesture in progress
+	twhFirstPress = 1 // first press down, waiting for release
+	twhPriming    = 2 // first tap done, timer1 running
+	twhArmed      = 3 // second press down, timer2 running
+	twhActive     = 4 // whileheld process running
+)
+
 type LoopState struct {
 	mu            sync.Mutex
 	active        map[string]context.CancelFunc // repeat loops: combo -> cancel
@@ -22,6 +30,8 @@ type LoopState struct {
 	holdTimers    map[string]context.CancelFunc // hold: combo -> cancel timer
 	tapHoldTimers map[string]context.CancelFunc         // tap-vs-hold: combo -> cancel hold timer
 	tapHoldNormal map[string]*config.ParsedShortcut     // tap-vs-hold: combo -> normal shortcut to fire on tap
+	twhPhase      map[string]int                        // tapwhileheld: combo -> phase
+	twhCancel     map[string]context.CancelFunc         // tapwhileheld: combo -> active timer cancel
 }
 
 func runTickerLoop(ctx context.Context, interval float64, fn func()) {
@@ -45,6 +55,8 @@ func NewLoopState() *LoopState {
 		holdTimers:    make(map[string]context.CancelFunc),
 		tapHoldTimers: make(map[string]context.CancelFunc),
 		tapHoldNormal: make(map[string]*config.ParsedShortcut),
+		twhPhase:      make(map[string]int),
+		twhCancel:     make(map[string]context.CancelFunc),
 	}
 }
 
@@ -128,14 +140,49 @@ func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *Loo
 			LogKey(matcher.GetKeyName(code), code)
 			m.ClearTapCandidate() // Any non-modifier clears tap
 
+			// Compute combo early for tapwhileheld check (takes priority over doubletap)
+			combo := m.GetCurrentCombo(code)
+
+			// Handle tapwhileheld state machine
+			if twh := m.CheckShortcut(combo, config.BehaviorTapWhileHeld, config.TimingPress); twh != nil {
+				loopState.mu.Lock()
+				phase := loopState.twhPhase[combo]
+				loopState.mu.Unlock()
+
+				if phase == twhPriming {
+					// Second press within tap window — arm it, start hold timer
+					loopState.mu.Lock()
+					if cancel, ok := loopState.twhCancel[combo]; ok {
+						cancel()
+						delete(loopState.twhCancel, combo)
+					}
+					loopState.twhPhase[combo] = twhArmed
+					loopState.mu.Unlock()
+					startTwhHoldTimer(combo, twh, cfg, loopState, m.GetComboCodes(code), virtual, m.GetCurrentModifiers())
+					bufferedKeys[code] = true
+					return true
+				}
+
+				// First press — track it, but only suppress if no other behaviors exist
+				loopState.mu.Lock()
+				loopState.twhPhase[combo] = twhFirstPress
+				loopState.mu.Unlock()
+
+				hasOtherBehaviors := m.CheckShortcut(combo, config.BehaviorNormal, config.TimingPress) != nil ||
+					m.CheckShortcut(combo, config.BehaviorWhileHeld, config.TimingPress) != nil ||
+					m.CheckShortcut(combo, config.BehaviorHold, config.TimingPress) != nil
+				if !hasOtherBehaviors {
+					bufferedKeys[code] = true
+					return true
+				}
+				// Fall through to normal/whileheld/hold handling
+			}
+
 			// Check if this key has a doubletap shortcut - suppress and wait for release
 			if m.HasDoubleTapShortcut(code) {
 				bufferedKeys[code] = true
 				return true // Suppress, handle on release
 			}
-
-			// Check for press-triggered shortcuts
-			combo := m.GetCurrentCombo(code)
 
 			hasRelease := m.HasReleaseShortcut(combo)
 			pressMatched := false
@@ -226,6 +273,66 @@ func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *Loo
 		// KEY RELEASE (value == 0)
 		if value == 0 {
 			combo := m.GetCurrentCombo(code)
+
+			// Handle tapwhileheld state machine
+			if twh := m.CheckShortcut(combo, config.BehaviorTapWhileHeld, config.TimingPress); twh != nil {
+				loopState.mu.Lock()
+				phase := loopState.twhPhase[combo]
+				loopState.mu.Unlock()
+
+				switch phase {
+				case twhFirstPress:
+					// Was it a tap or a hold? Only prime on tap.
+					loopState.mu.Lock()
+					_, wasHeld := loopState.heldProcesses[combo]
+					_, wasHeldKey := loopState.heldKeys[combo]
+					loopState.mu.Unlock()
+
+					if !wasHeld && !wasHeldKey {
+						loopState.mu.Lock()
+						loopState.twhPhase[combo] = twhPriming
+						loopState.mu.Unlock()
+						startTwhPrimingTimer(combo, twh, cfg, loopState)
+					} else {
+						loopState.mu.Lock()
+						loopState.twhPhase[combo] = twhIdle
+						loopState.mu.Unlock()
+					}
+					// If we suppressed the first press (standalone tapwhileheld), suppress release too
+					if bufferedKeys[code] {
+						delete(bufferedKeys, code)
+						return true
+					}
+					// Otherwise fall through — normal release handling proceeds
+
+				case twhArmed:
+					// Released before hold threshold — fire doubletap if defined
+					loopState.mu.Lock()
+					if cancel, ok := loopState.twhCancel[combo]; ok {
+						cancel()
+						delete(loopState.twhCancel, combo)
+					}
+					loopState.twhPhase[combo] = twhIdle
+					loopState.mu.Unlock()
+					delete(bufferedKeys, code)
+					if dtShortcut := m.GetDoubleTapShortcut(code); dtShortcut != nil {
+						resolvedCmd := cfg.ResolveCommand(dtShortcut.Commands[0])
+						LogMatch(combo+".doubletap", m.GetComboCodes(code))
+						LogTrigger(resolvedCmd)
+						Execute(resolvedCmd, cfg)
+					}
+					return true
+
+				case twhActive:
+					// Stop whileheld process
+					stopHeldProcess(combo, loopState, virtual)
+					loopState.mu.Lock()
+					loopState.twhPhase[combo] = twhIdle
+					loopState.mu.Unlock()
+					delete(bufferedKeys, code)
+					return true
+				}
+			}
 
 			// Fire tap if released before hold threshold
 			if fireTapIfPending(combo, loopState, cfg, m.GetComboCodes(code), virtual, m.GetCurrentModifiers()) {
@@ -611,4 +718,64 @@ func fireTapIfPending(combo string, state *LoopState, cfg *config.Config, codes 
 		executeShortcut(normalShortcut, cfg, virtual, heldModifiers)
 	}
 	return true
+}
+
+// startTwhPrimingTimer starts timer1: the window within which a second press must happen.
+// On timeout, resets to idle (gesture abandoned).
+func startTwhPrimingTimer(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, state *LoopState) {
+	interval := shortcut.Interval
+	if interval == 0 {
+		interval = cfg.Settings.DefaultInterval
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	state.mu.Lock()
+	state.twhCancel[combo] = cancel
+	state.mu.Unlock()
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Duration(interval) * time.Millisecond):
+			state.mu.Lock()
+			if state.twhPhase[combo] == twhPriming {
+				state.twhPhase[combo] = twhIdle
+				delete(state.twhCancel, combo)
+			}
+			state.mu.Unlock()
+		}
+	}()
+}
+
+// startTwhHoldTimer starts timer2: the hold threshold on the second press.
+// On timeout (still held), starts the whileheld process.
+func startTwhHoldTimer(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, state *LoopState, codes string, virtual *evdev.InputDevice, heldModifiers matcher.ModifierState) {
+	interval := shortcut.HoldInterval
+	if interval == 0 {
+		interval = cfg.Settings.DefaultInterval
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	state.mu.Lock()
+	state.twhCancel[combo] = cancel
+	state.mu.Unlock()
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			return // Released before threshold — doubletap handled by release path
+		case <-time.After(time.Duration(interval) * time.Millisecond):
+			state.mu.Lock()
+			if state.twhPhase[combo] == twhArmed {
+				state.twhPhase[combo] = twhActive
+				delete(state.twhCancel, combo)
+				state.mu.Unlock()
+				LogMatch(combo+".tapwhileheld", codes)
+				startHeldProcess(combo, shortcut, cfg, state, virtual, heldModifiers)
+			} else {
+				state.mu.Unlock()
+			}
+		}
+	}()
 }
