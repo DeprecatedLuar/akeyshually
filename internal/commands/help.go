@@ -8,89 +8,89 @@ var (
 	helpRoot = gohelp.NewPage("akeyshually", "keyboard shortcut daemon").
 		Usage("akeyshually [command] [flags]").
 		Section("Commands",
-			gohelp.Cmd("start", "Start daemon in background"),
-			gohelp.Cmd("stop", "Stop running daemon"),
-			gohelp.Cmd("restart", "Restart daemon"),
-			gohelp.Cmd("update", "Check for and install updates"),
-			gohelp.Cmd("config [file]", "Edit config file in $EDITOR"),
-			gohelp.Cmd("enable <file>", "Enable config overlay"),
-			gohelp.Cmd("disable <file>", "Disable config overlay"),
-			gohelp.Cmd("list", "List all config files and their status"),
-			gohelp.Cmd("clear", "Disable all overlays"),
-			gohelp.Cmd("help [topic]", "Show this help message"),
-			gohelp.Cmd("version", "Show version information"),
+			gohelp.Item("start", "Start daemon in background"),
+			gohelp.Item("stop", "Stop running daemon"),
+			gohelp.Item("restart", "Restart daemon"),
+			gohelp.Item("update", "Check for and install updates"),
+			gohelp.Item("config [file]", "Edit config file in $EDITOR"),
+			gohelp.Item("enable <file>", "Enable config overlay"),
+			gohelp.Item("disable <file>", "Disable config overlay"),
+			gohelp.Item("list", "List all config files and their status"),
+			gohelp.Item("clear", "Disable all overlays"),
+			gohelp.Item("help [topic]", "Show this help message"),
+			gohelp.Item("version", "Show version information"),
 		).
 		Section("Flags",
-			gohelp.Cmd("-c, --config <file>", "Load custom config (name or path)"),
-			gohelp.Cmd("--debug", "Show device detection and verbose output"),
+			gohelp.Item("-c, --config <file>", "Load custom config (name or path)"),
+			gohelp.Item("--debug", "Show device detection and verbose output"),
 		).
 		Text("Config: ~/.config/akeyshually/")
 
 	helpConfig = gohelp.NewPage("config", "configuration file documentation").
 		Text("Config File: ~/.config/akeyshually/config.toml").
 		Section("[settings]",
-			gohelp.Cmd("default_interval", "Default interval for repeat behaviors (milliseconds, default: 100)"),
-			gohelp.Cmd("disable_media_keys", "Forward media keys to system (default: false)"),
-			gohelp.Cmd("shell", "Shell to use for commands (default: $SHELL, fallback: sh)"),
-			gohelp.Cmd("env_file", "File to source before command execution (optional)"),
-			gohelp.Cmd("devices", "List of device name substrings to grab (case-insensitive)").Example("devices = [\"Huion\", \"Xbox Controller\"]"),
+			gohelp.Item("default_interval", "Default interval for repeat behaviors (milliseconds, default: 100)"),
+			gohelp.Item("disable_media_keys", "Forward media keys to system (default: false)"),
+			gohelp.Item("shell", "Shell to use for commands (default: $SHELL, fallback: sh)"),
+			gohelp.Item("env_file", "File to source before command execution (optional)"),
+			gohelp.Item("devices", "List of device name substrings to grab (case-insensitive)", "devices = [\"Huion\", \"Xbox Controller\"]"),
 		).
 		Text("[settings]\ndefault_interval = 100\ndisable_media_keys = false\nshell = \"/bin/bash\"\nenv_file = \"~/.profile\"").
 		Section("[shortcuts]",
-			gohelp.Cmd("Modifiers", "super, ctrl, alt, shift (lowercase, no left/right distinction)"),
-			gohelp.Cmd("Keys", "lowercase letters, numbers, special keys (print, space, etc.)"),
-			gohelp.Cmd("Syntax", "Use + to separate modifiers and key"),
-			gohelp.Cmd("Behaviors", ".whileheld, .repeat-whileheld, .repeat-toggle, .switch, .doubletap"),
-			gohelp.Cmd("Timing", ".onpress (default), .onrelease"),
+			gohelp.Item("Modifiers", "super, ctrl, alt, shift (lowercase, no left/right distinction)"),
+			gohelp.Item("Keys", "lowercase letters, numbers, special keys (print, space, etc.)"),
+			gohelp.Item("Syntax", "Use + to separate modifiers and key"),
+			gohelp.Item("Behaviors", ".whileheld, .repeat-whileheld, .repeat-toggle, .switch, .doubletap"),
+			gohelp.Item("Timing", ".onpress (default), .onrelease"),
 		).
 		Text("[shortcuts]\n\"super.onrelease\" = \"rofi\"\n\"super+t\" = \"alacritty\"\n\"ctrl+alt+delete\" = \"systemctl reboot\"\n\"print\" = \"prtscr\"  # References [command_variables]").
 		Section("[command_variables]",
-			gohelp.Cmd("browser", "Reusable command alias").Example("browser = \"brave-browser --new-window\""),
-			gohelp.Cmd("terminal", "Reusable command alias").Example("terminal = \"alacritty --working-directory ~\""),
+			gohelp.Item("browser", "Reusable command alias", "browser = \"brave-browser --new-window\""),
+			gohelp.Item("terminal", "Reusable command alias", "terminal = \"alacritty --working-directory ~\""),
 		).
 		Text("Auto-Reload: config file is automatically reloaded when modified (no restart needed)")
 
 	helpOverlays = gohelp.NewPage("overlays", "config overlay system").
 		Text("Overlay configs allow you to enable/disable groups of shortcuts dynamically without editing the main config.toml.").
 		Section("Use Cases",
-			gohelp.Cmd("Gaming mode", "Override window manager shortcuts while gaming"),
-			gohelp.Cmd("Work profiles", "Different shortcuts for different projects"),
-			gohelp.Cmd("Application sets", "Load shortcuts specific to certain apps"),
+			gohelp.Item("Gaming mode", "Override window manager shortcuts while gaming"),
+			gohelp.Item("Work profiles", "Different shortcuts for different projects"),
+			gohelp.Item("Application sets", "Load shortcuts specific to certain apps"),
 		).
 		Section("How It Works",
-			gohelp.Cmd("1. Base config", "config.toml is always loaded first"),
-			gohelp.Cmd("2. Overlays merge", "Enabled overlays merge on top, overriding base shortcuts"),
-			gohelp.Cmd("3. Auto-reload", "Enabled overlays are watched for changes"),
+			gohelp.Item("1. Base config", "config.toml is always loaded first"),
+			gohelp.Item("2. Overlays merge", "Enabled overlays merge on top, overriding base shortcuts"),
+			gohelp.Item("3. Auto-reload", "Enabled overlays are watched for changes"),
 		).
 		Section("Commands",
-			gohelp.Cmd("enable gaming.toml", "Enable overlay and restart daemon").Example("akeyshually enable gaming.toml"),
-			gohelp.Cmd("disable gaming.toml", "Disable overlay and restart daemon"),
-			gohelp.Cmd("list", "Show all config files and their status"),
-			gohelp.Cmd("clear", "Disable all overlays"),
-			gohelp.Cmd("config gaming", "Edit gaming.toml overlay"),
+			gohelp.Item("enable gaming.toml", "Enable overlay and restart daemon", "akeyshually enable gaming.toml"),
+			gohelp.Item("disable gaming.toml", "Disable overlay and restart daemon"),
+			gohelp.Item("list", "Show all config files and their status"),
+			gohelp.Item("clear", "Disable all overlays"),
+			gohelp.Item("config gaming", "Edit gaming.toml overlay"),
 		).
 		Section("Settings",
-			gohelp.Cmd("notify_on_overlay_change", "Desktop notifications when overlays change (default: false)"),
+			gohelp.Item("notify_on_overlay_change", "Desktop notifications when overlays change (default: false)"),
 		).
 		Text("Enable in config.toml:\n[settings]\nnotify_on_overlay_change = true")
 
 	helpModifiers = gohelp.NewPage("modifiers", "shortcut modifiers and syntax reference").
 		Text("Modifiers control when and how shortcuts execute. Add them after the key combo using dot notation.").
 		Section("Timing",
-			gohelp.Cmd(".onpress", "Execute on key press (default, can be omitted)").Example("\"super+t\" = \"terminal\""),
-			gohelp.Cmd(".onrelease", "Execute on key release — tap detection; cancelled by other keys or mouse clicks").Example("\"super.onrelease\" = \"rofi\""),
+			gohelp.Item(".onpress", "Execute on key press (default, can be omitted)", "\"super+t\" = \"terminal\""),
+			gohelp.Item(".onrelease", "Execute on key release — tap detection; cancelled by other keys or mouse clicks", "\"super.onrelease\" = \"rofi\""),
 		).
 		Section("Behaviors",
-			gohelp.Cmd(".whileheld", "Run process while key held, SIGTERM on release").Example("\"super+f.whileheld\" = \"$FILEMANAGER\""),
-			gohelp.Cmd(".repeat-whileheld(ms)", "Repeat command while key held; omit interval for default_interval").Example("\"super+up.repeat-whileheld(100)\" = \"volume_up\""),
-			gohelp.Cmd(".repeat-toggle(ms)", "First press starts loop, second press stops it").Example("\"f1.repeat-toggle(50)\" = \"xdotool click 1\""),
-			gohelp.Cmd(".switch", "Cycle through array of commands on each press").Example("\"f2.switch\" = [\"cmd1\", \"cmd2\", \"cmd3\"]"),
-			gohelp.Cmd(".doubletap(ms)", "Execute on double-tap; works on modifiers and single keys only").Example("\"super.doubletap(300)\" = \"rofi -show drun\""),
-			gohelp.Cmd(".passthrough", "Match regardless of modifier state").Example("\"v.passthrough\" = \"copyq toggle\""),
+			gohelp.Item(".whileheld", "Run process while key held, SIGTERM on release", "\"super+f.whileheld\" = \"$FILEMANAGER\""),
+			gohelp.Item(".repeat-whileheld(ms)", "Repeat command while key held; omit interval for default_interval", "\"super+up.repeat-whileheld(100)\" = \"volume_up\""),
+			gohelp.Item(".repeat-toggle(ms)", "First press starts loop, second press stops it", "\"f1.repeat-toggle(50)\" = \"xdotool click 1\""),
+			gohelp.Item(".switch", "Cycle through array of commands on each press", "\"f2.switch\" = [\"cmd1\", \"cmd2\", \"cmd3\"]"),
+			gohelp.Item(".doubletap(ms)", "Execute on double-tap; works on modifiers and single keys only", "\"super.doubletap(300)\" = \"rofi -show drun\""),
+			gohelp.Item(".passthrough", "Match regardless of modifier state", "\"v.passthrough\" = \"copyq toggle\""),
 		).
 		Section("Combining",
-			gohelp.Cmd(".repeat-whileheld + timing", "").Example("\"super+up.repeat-whileheld(100)\" = \"volume_up\""),
-			gohelp.Cmd(".repeat-toggle + timing", "").Example("\"f1.repeat-toggle(50)\" = \"xdotool click 1\""),
+			gohelp.Item(".repeat-whileheld + timing", "", "\"super+up.repeat-whileheld(100)\" = \"volume_up\""),
+			gohelp.Item(".repeat-toggle + timing", "", "\"f1.repeat-toggle(50)\" = \"xdotool click 1\""),
 		).
 		Text("Restrictions:\n  • .doubletap only works on single keys (no key combos)\n  • .switch requires a command array, others require a single command")
 )

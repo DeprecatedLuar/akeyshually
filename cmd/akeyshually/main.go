@@ -15,9 +15,12 @@ import (
 	"github.com/deprecatedluar/akeyshually/internal/matcher"
 )
 
+const githubRepo = "DeprecatedLuar/akeyshually"
+
+var version = "dev"
+
 func main() {
-	// Parse CLI arguments and execute commands
-	result := handler.Parse(os.Args[1:])
+	result := handler.Parse(os.Args[1:], version, githubRepo)
 	if result.RunForeground {
 		startDaemon(result.ConfigPath)
 	}
