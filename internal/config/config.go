@@ -41,6 +41,7 @@ const (
 	BehaviorSwitch
 	BehaviorDoubleTap
 	BehaviorPressRelease
+	BehaviorTapWhileHeld
 )
 
 type TimingMode int
@@ -54,7 +55,8 @@ type ParsedShortcut struct {
 	KeyCombo    string       // "super+k" (without suffix)
 	Behavior    BehaviorMode
 	Timing      TimingMode
-	Interval    float64  // Milliseconds (0 = use default)
+	Interval    float64  // Milliseconds (0 = use default) — tap window for tapwhileheld
+	HoldInterval float64 // Milliseconds (0 = use default) — hold threshold for tapwhileheld
 	Commands    []string // Single command OR switch array
 	Passthrough bool     // Ignore modifiers when matching
 	AliasGroup  string   // Canonical key for shared state (e.g. "f1/f2.switch"), empty if not an alias
@@ -361,9 +363,24 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 
 	// Parse modifiers (behavior and timing)
 	intervalRegex := regexp.MustCompile(`^(whileheld|hold|toggle|repeat-whileheld|repeat-toggle|doubletap)\((\d+\.?\d*|\d*\.\d+)\)$`)
+	twhRegex := regexp.MustCompile(`^tap(?:\((\d+\.?\d*|\d*\.\d+)\))?whileheld(?:\((\d+\.?\d*|\d*\.\d+)\))?$`)
 
 	for i := 1; i < len(parts); i++ {
 		part := strings.ToLower(parts[i])
+
+		// Check for tapwhileheld with optional intervals: tap(N)whileheld(N)
+		if matches := twhRegex.FindStringSubmatch(part); matches != nil {
+			shortcut.Behavior = BehaviorTapWhileHeld
+			if matches[1] != "" {
+				interval, _ := strconv.ParseFloat(matches[1], 64)
+				shortcut.Interval = normalizeInterval(interval)
+			}
+			if matches[2] != "" {
+				interval, _ := strconv.ParseFloat(matches[2], 64)
+				shortcut.HoldInterval = normalizeInterval(interval)
+			}
+			continue
+		}
 
 		// Check for interval notation
 		if matches := intervalRegex.FindStringSubmatch(part); matches != nil {
@@ -456,6 +473,8 @@ func behaviorName(b BehaviorMode) string {
 		return "doubletap"
 	case BehaviorPressRelease:
 		return "pressrelease"
+	case BehaviorTapWhileHeld:
+		return "tapwhileheld"
 	default:
 		return "unknown"
 	}
