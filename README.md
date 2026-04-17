@@ -55,7 +55,7 @@ I made akeyshually to not only have my configs in a single git tracked file, but
 ## Installation
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/DeprecatedLuar/akeyshually/main/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/DeprecatedLuar/the-satellite/main/satellite.sh | bash -s -- install DeprecatedLuar/akeyshually
 ```
 
 <details>
