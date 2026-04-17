@@ -37,11 +37,11 @@ var (
 		).
 		Text("[settings]\ndefault_interval = 100\ndisable_media_keys = false\nshell = \"/bin/bash\"\nenv_file = \"~/.profile\"").
 		Section("[shortcuts]",
-			gohelp.Item("Modifiers", "super, ctrl, alt, shift (lowercase, no left/right distinction)"),
+			gohelp.Item("Key modifiers", "super, ctrl, alt, shift (lowercase, no left/right distinction)"),
 			gohelp.Item("Keys", "lowercase letters, numbers, special keys (print, space, etc.)"),
 			gohelp.Item("Syntax", "Use + to separate modifiers and key"),
-			gohelp.Item("Behaviors", ".whileheld, .repeat-whileheld, .repeat-toggle, .switch, .doubletap"),
-			gohelp.Item("Timing", ".onpress (default), .onrelease"),
+			gohelp.Item("Triggers", ".onpress (default), .onrelease, .whileheld, .hold, .doubletap, .tapwhileheld, .pressrelease"),
+			gohelp.Item("Modifiers", ".repeat-whileheld, .repeat-toggle, .switch, .passthrough"),
 		).
 		Text("[shortcuts]\n\"super.onrelease\" = \"rofi\"\n\"super+t\" = \"alacritty\"\n\"ctrl+alt+delete\" = \"systemctl reboot\"\n\"print\" = \"prtscr\"  # References [command_variables]").
 		Section("[command_variables]",
@@ -74,25 +74,24 @@ var (
 		).
 		Text("Enable in config.toml:\n[settings]\nnotify_on_overlay_change = true")
 
-	helpModifiers = gohelp.NewPage("modifiers", "shortcut modifiers and syntax reference").
-		Text("Modifiers control when and how shortcuts execute. Add them after the key combo using dot notation.").
-		Section("Timing",
+	helpModifiers = gohelp.NewPage("modifiers", "triggers and modifiers syntax reference").
+		Text("Triggers define when the action fires. Modifiers stack on top to change execution behavior.").
+		Section("Triggers",
 			gohelp.Item(".onpress", "Execute on key press (default, can be omitted)", "\"super+t\" = \"terminal\""),
 			gohelp.Item(".onrelease", "Execute on key release — tap detection; cancelled by other keys or mouse clicks", "\"super.onrelease\" = \"rofi\""),
+			gohelp.Item(".whileheld", "Start process on press, SIGTERM on release", "\"super+f.whileheld\" = \"$FILEMANAGER\""),
+			gohelp.Item(".hold(ms)", "Trigger after held for duration; does not kill on release", "\"super+h.hold(500)\" = \"notify-send held\""),
+			gohelp.Item(".doubletap(ms)", "Execute on double-tap; single keys only", "\"super.doubletap(300)\" = \"rofi -show drun\""),
+			gohelp.Item(".tap(ms)whileheld(ms)", "Tap fires first command; tap-then-hold fires second", "\"super.tap(200)whileheld(500)\" = [\"rofi\", \"$FILEMANAGER\"]"),
+			gohelp.Item(".pressrelease", "Different commands on press and release (requires 2-command array)", "\"mute.pressrelease\" = [\"mic-on\", \"mic-off\"]"),
 		).
-		Section("Behaviors",
-			gohelp.Item(".whileheld", "Run process while key held, SIGTERM on release", "\"super+f.whileheld\" = \"$FILEMANAGER\""),
+		Section("Modifiers",
 			gohelp.Item(".repeat-whileheld(ms)", "Repeat command while key held; omit interval for default_interval", "\"super+up.repeat-whileheld(100)\" = \"volume_up\""),
 			gohelp.Item(".repeat-toggle(ms)", "First press starts loop, second press stops it", "\"f1.repeat-toggle(50)\" = \"xdotool click 1\""),
 			gohelp.Item(".switch", "Cycle through array of commands on each press", "\"f2.switch\" = [\"cmd1\", \"cmd2\", \"cmd3\"]"),
-			gohelp.Item(".doubletap(ms)", "Execute on double-tap; works on modifiers and single keys only", "\"super.doubletap(300)\" = \"rofi -show drun\""),
 			gohelp.Item(".passthrough", "Match regardless of modifier state", "\"v.passthrough\" = \"copyq toggle\""),
 		).
-		Section("Combining",
-			gohelp.Item(".repeat-whileheld + timing", "", "\"super+up.repeat-whileheld(100)\" = \"volume_up\""),
-			gohelp.Item(".repeat-toggle + timing", "", "\"f1.repeat-toggle(50)\" = \"xdotool click 1\""),
-		).
-		Text("Restrictions:\n  • .doubletap only works on single keys (no key combos)\n  • .switch requires a command array, others require a single command")
+		Text("Restrictions:\n  • .doubletap and .tapwhileheld only work on single keys (no combos)\n  • .switch, .tapwhileheld, and .pressrelease require a command array")
 )
 
 // Help displays usage information or topic-specific help.
