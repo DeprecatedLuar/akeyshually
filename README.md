@@ -55,40 +55,46 @@ I made akeyshually to not only have my configs in a single git tracked file, but
 
 ## Installation
 
+**If you have Go:**
+
+```bash
+go install github.com/DeprecatedLuar/akeyshually/cmd/akeyshually@latest
+```
+
+Make sure `$GOPATH/bin` (usually `~/go/bin`) is in your `PATH`.
+
+<details>
+<summary>If you don't have Go. Install script here.</summary>
+
+<br>
+
+Downloads a pre-built binary from releases. The script delegates to [the-satellite](https://github.com/DeprecatedLuar/the-satellite), a reusable installer I use across projects for OS/arch detection and binary downloads.
+
 ```bash
 curl -sSL https://raw.githubusercontent.com/DeprecatedLuar/the-satellite/main/satellite.sh | bash -s -- install DeprecatedLuar/akeyshually
 ```
 
+</details>
+
 <details>
-<summary>Other Install Methods</summary>
+<summary>Build from source</summary>
 
 <br>
 
-**Manual Install**
 ```bash
-# Build from source
 git clone https://github.com/DeprecatedLuar/akeyshually.git
 cd akeyshually
-go build -ldflags="-s -w" -o akeyshually ./akeyshually
-
-# Install to ~/.local/bin
-./other/install-local.sh
-
-# Or install system-wide
-sudo cp akeyshually /usr/local/bin/
+go build -ldflags="-s -w" -o akeyshually ./cmd/akeyshually
+mv akeyshually ~/.local/bin/
 ```
-
-**Prerequisites:**
-- Go 1.21+ (for building)
-- User must be in `input` group:
-  ```bash
-  sudo usermod -aG input $USER
-  # Logout and login for group change to take effect
-  ```
 
 </details>
 
-<br>
+**Prerequisites:** User must be in `input` group:
+```bash
+sudo usermod -aG input $USER
+# Logout and login for group change to take effect
+```
 
 First run auto-generates config files in `~/.config/akeyshually/`. Just run `akeyshually` and you're good.
 
