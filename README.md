@@ -44,7 +44,8 @@ I made akeyshually to not only have my configs in a single git tracked file, but
 - Works on X11, Wayland, literally any WM/DE via evdev
 - All settings declared in a single (or not) TOML config
 - **Actually lightweight** takes about ~3MB binary, <3MB RAM, 0% CPU when idle
-- Configs are hot-reloaded on edit
+- You can write literal drivers on steroids on a 10 line file.
+- If a hardware has buttons akeyshually can bend them to your will
 - Special modes like `.whileheld`, `.repeat-whileheld`, `.repeat-toggle`, `.switch`, `.doubletap`, `.onrelease`
 - You can literally make an auto-clicker with a single line
 - Works alongside remappers (keyd, kanata, kmonad, xremap...)
