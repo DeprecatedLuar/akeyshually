@@ -1,28 +1,41 @@
 <div align="center">
   <img src="other/assets/erm.webp" alt="akeyshually banner" width="400">
+
+<div align="center">
+
+[Install](#installation) • [Commands](#commands) • [Configuration](#configuration) • [Behaviors](#behaviors) • [Key Names](#key-names)
+
 </div>
 
-<p align="center">Errm... Akeyshually, this is NOT a remapper but an evdev-based userspace daemon configured in TOML that intercepts raw input events, performs stateful modifier tracking, and executes arbitrary shell commands through a fire-and-forget subprocess model regardless of session type or graphical environment manager</p>
+</div>
 
-<p align="center">
+<div align="center">
+
+Errm... Akeyshually, this is NOT a remapper but an evdev-based userspace daemon configured in TOML that intercepts raw input events, performs stateful modifier tracking, and executes arbitrary shell commands through a fire-and-forget subprocess model regardless of session type or graphical environment manager
+
+</div>
+
+<div align="center">
   <a href="https://github.com/DeprecatedLuar/akeyshually/stargazers">
     <img src="https://img.shields.io/github/stars/DeprecatedLuar/akeyshually?style=for-the-badge&logo=github&color=1f6feb&logoColor=white&labelColor=black"/>
   </a>
   <a href="https://github.com/DeprecatedLuar/akeyshually/blob/main/LICENSE">
     <img src="https://img.shields.io/github/license/DeprecatedLuar/akeyshually?style=for-the-badge&color=green&labelColor=black"/>
   </a>
-</p>
-
+  <a href="https://github.com/DeprecatedLuar/akeyshually/releases">
+    <img src="https://img.shields.io/github/v/release/DeprecatedLuar/akeyshually?style=for-the-badge&color=orange&labelColor=black"/>
+  </a>
+</div>
 
 ---
 
-Every shortcuts manager is coupled to your display server (X11 vs Wayland ), your window manager (sway vs Hyprland vs i3), and your current machine.
+Every shortcuts manager is coupled to your display server (X11 vs Wayland), your window manager (sway vs Hyprland vs i3), and your current machine.
 
 I made akeyshually to not only have my configs in a single git tracked file, but to work anywhere I want.
 
 ---
 
-# THE README IS LIKE 6 MONTHS OUTDATED. I'll re-write everything when I get some time
+# Readme will be fully updated once I get some time, some sections were provisionally made with AI based on latest commits
 
 ## The cool features you've never seen before
 
@@ -84,16 +97,20 @@ First run auto-generates config files in `~/.config/akeyshually/`. Just run `ake
 
 ## Commands
 
-| Command | Description                                      |
-|---------|--------------------------------------------------|
-| start   | Daemonize in background                          |
-| stop    | Stop daemon (via pidfile or systemctl)           |
-| update  | Check for and install updates                    |
-| version | Show version                                     |
-| --help  | Show help                                        |
-
-> [!NOTE]
-> `akeyshually` with no args runs in foreground
+| Command | Description | Example |
+|:--------|:------------|:--------|
+| _(none)_ | Run in foreground | `akeyshually` |
+| `start` | Daemonize in background | `akeyshually start` |
+| `stop` | Stop daemon (pidfile or systemctl) | `akeyshually stop` |
+| `restart` | Restart daemon | `akeyshually restart` |
+| `enable FILE` | Enable a config overlay | `akeyshually enable gaming` |
+| `disable FILE` | Disable a config overlay | `akeyshually disable gaming` |
+| `list` | List all configs and overlay status | `akeyshually list` |
+| `clear` | Disable all active overlays | `akeyshually clear` |
+| `config [FILE]` | Edit a config file in `$EDITOR` | `akeyshually config` |
+| `update` | Check for and install updates | `akeyshually update` |
+| `version` | Show version | `akeyshually version` |
+| `--help` | Show help | `akeyshually --help` |
 
 ---
 
@@ -103,73 +120,142 @@ Config lives at `~/.config/akeyshually/`:
 - `config.toml` - All-in-one config (settings, shortcuts, command aliases)
 - `akeyshually.service` - Systemd service file (with install instructions)
 
-<details>
-<summary>Configuration Example</summary>
+<h3 id="behaviors">Behaviors</h3>
 
-<br>
+**Triggers** — when the action fires:
+
+| Trigger | Syntax | Description |
+|:--------|:-------|:------------|
+| `.onpress` | `"key"` | Executes on key press (default) |
+| `.onrelease` | `"key.onrelease"` | Executes on key release |
+| `.doubletap(ms)` | `"key.doubletap(200)"` | Executes on double-tap |
+| `.whileheld` | `"key.whileheld"` | Starts on press, process killed on release |
+| `.hold(ms)` | `"key.hold(500)"` | Triggers on hold, does not kill on release |
+| `.tap(ms)whileheld(ms)` | `"key.tap(200)whileheld(500)"` | Tap then tap+hold on next hit to trigger |
+| `.pressrelease` | `"key.pressrelease"` | Executes on both press and release |
+
+**Modifiers** — stack on top of triggers:
+
+| Modifier | Syntax | Description |
+|:---------|:-------|:------------|
+| `.repeat-whileheld(ms)` | `"key.repeat-whileheld(50)"` | Repeats while held |
+| `.repeat-toggle(ms)` | `"key.repeat-toggle(50)"` | Toggles a repeat loop on/off |
+| `.switch` | `"key.switch" = ["cmd1", "cmd2"]` | Cycles through a command array |
+| `.passthrough` | `"key.passthrough"` | Ignores modifiers when matching |
+
+### Config Overlays
+
+Basically you can overlay your main config with another config that overrides all conflicts so every file is modular and stack on each other.
+
+```bash
+akeyshually enable gaming    # activate overlay
+akeyshually disable gaming   # deactivate
+akeyshually list                  # see what's active
+akeyshually clear                 # disable all overlays
+```
+
+An overlay file has the same format as `config.toml` — any shortcuts or command variables it defines override the base config ones. The `devices` setting is the exception: overlays **append** to the base device list rather than replacing it.
 
 ```toml
-# ~/.config/akeyshually/config.toml
+# ~/.config/akeyshually/gaming.toml
 
 [settings]
-default_interval = 100       # Milliseconds for repeat behaviors
-disable_media_keys = false   # Forward media keys to system (GNOME/KDE daemons)
-#shell = "/bin/bash"         # Optional: override $SHELL
-#env_file = "~/.profile"     # Optional: source before commands
+devices = ["Xbox Controller"]
+
+[shortcuts]
+"super+f" = "steam"
+```
+
+Set `notify_on_overlay_change = true` in `[settings]` to get a desktop notification when overlays are toggled.
+
+---
+
+### This is what my personal config looks like so you can have an idea how I do it
+
+```toml
+[settings]
+default_interval = 150
+disable_media_keys = false  # Set to true to let system handle media keys (GNOME/KDE/etc.)
+env_file = "~/.profile"
 
 [shortcuts]
 "super+k" = "edit_config"
+"ctrl+shift+k" = "kill_switch"
 
 #-[LAUNCHERS]--------------------------------
 
-"super.onrelease" = "rofi"  # Modifier tap (executes on release if pressed alone)
-"super+b" = "browser"
-"super+shift+b" = "browser2"
-"super+return" = "kitty"
-"super+f" = "dolphin"
-"super+x" = "xkill"
-"super+e" = "email"
-"super+v" = "copyq toggle"
+"super.onrelease" = "hotline"
+"super.doubletap(270)" = "$LAUNCHER"
+
+"super+enter" = "$TERMINAL"
+"super+b" = "$BROWSER"
+"super+shift+b" = "brave"
+"super+e" = "thunderbird"
 "super+w" = "whatsapp"
+"super+f" = "$FILEMANAGER"
+"super+v" = "copyq toggle"
 "shift+super+n" = "notetaker"
+
+#-[WINDOW MANAGER]---------------------------
+
+"super+x" = "kill_window"
 
 #-[UTILS]------------------------------------
 
-"print" = "prtscr"
-"super+p" = "prtscr"
-"shift+print" = "/home/user/Workspace/tools/bin/screenshot-save"
-"ctrl+print" = "bash -c \"xdg-open ~/Media/Pictures/temp.png\""
+"print" = "grimblast -f -n copysave area ~/Media/Pictures/screenshots/latest.png"
+"print.doubletap" = "last_screenshot"
+"super+shift+p" = "last_screenshot"
+"super+ctrl+p" = "grimblast -f -n copysave area"
+"shift+print" = "grimblast -f -n -o save area"
+"super+p" = "grimblast copy area"
+
+"super+y" = "yap toggle & sleep 3 && tcpeek reconnect"
+
+#-[MEDIA KEYS]-------------------------------
+
+"volumeup" = "volume_up"
+"volumedown" = "volume_down"
+"mute" = "mute_toggle"
+"brightnessup" = "brightness_up"
+"brightnessdown" = "brightness_down"
+"play" = "media_play_pause"
+"nextsong" = "media_next"
+"previoussong" = "media_previous"
+
 "ctrl+mute" = "mute_mic"
+"ctrl+volumeup" = "mic_up"
+"ctrl+volumedown" = "mic_down"
 
-# Advanced behaviors
-"f9.repeat-whileheld(50)" = "xdotool click 1"  # Auto-clicker: clicks every 50ms while held
-"f10.repeat-toggle" = "xdotool click 1"        # Toggle: starts/stops loop on each press
-"super+tab.switch" = ["window1", "window2", "window3"]  # Cycle through commands
+[command_variables]#--------------------------
 
-# Media keys - uncomment to enable
-#"volumeup" = "volume_up"
-#"volumedown" = "volume_down"
-#"mute" = "mute_toggle"
-
-[command_variables]
 edit_config = "kitty micro ~/.config/akeyshually/config.toml"
+kill_switch = "akeyshually stop && pkill -9 akeyshually"
 
-browser = "brave-browser --user-data-dir=/home/user/.config/BraveSoftware/1"
-browser2 = "brave-browser --user-data-dir=/home/user/.config/BraveSoftware/2"
-rofi = "~/.config/rofi/scripts/launcher_t7"
-email = "flatpak run org.mozilla.Thunderbird"
-mute_mic = "pactl set-source-mute @DEFAULT_SOURCE@ toggle"
+#-[LAUNCHERS]--------------------------------
+
+thunderbird = "thunderbird"
 whatsapp = "flatpak run com.rtosta.zapzap"
-notetaker = "bash -c \"source ~/.bashrc && /home/user/.config/bash/bin/notetaker/notetaker\""
-prtscr = "/home/user/Workspace/tools/bin/screenshot-save --temp"
+notetaker = "bash -c \"source ~/.bashrc && notetaker\""
 
-# Media key commands (uncomment shortcuts above to use)
-volume_up = "pactl set-sink-volume @DEFAULT_SINK@ +5%"
-volume_down = "pactl set-sink-volume @DEFAULT_SINK@ -5%"
-mute_toggle = "pactl set-sink-mute @DEFAULT_SINK@ toggle"
+#-[UTILS]------------------------------------
+
+mute_mic = "pactl set-source-mute @DEFAULT_SOURCE@ toggle || wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle"
+last_screenshot = "$IMAGE_VIEWER ~/Media/Pictures/screenshots/latest.png"
+
+#-[MEDIA COMMANDS]---------------------------
+
+volume_up = "wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%+"
+volume_down = "wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-"
+mute_toggle = "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
+brightness_up = "sunset +5"
+brightness_down = "sunset -5"
+media_play_pause = "playerctl play-pause"
+media_next = "playerctl next"
+media_previous = "playerctl previous"
+
+mic_up = "wpctl set-volume @DEFAULT_AUDIO_SOURCE@ 5%+"
+mic_down = "wpctl set-volume @DEFAULT_AUDIO_SOURCE@ 5%-"
 ```
-
-</details>
 
 <details>
 <summary>Shortcut Behaviors</summary>
@@ -219,25 +305,40 @@ mute_toggle = "pactl set-sink-mute @DEFAULT_SINK@ toggle"
 </details>
 
 <details>
-<summary>Available Key Names</summary>
+<summary id="key-names">Available Key Names</summary>
 
 <br>
 
-**Modifiers:** `super`, `ctrl`, `alt`, `shift`
+**Modifiers:**
+
+| Modifier | Config Name | Notes |
+|:---------|:------------|:------|
+| Super / Win / Meta | `super` | L/R variants treated identically; supports lone tap via `.onrelease` |
+| Control | `ctrl` | L/R variants treated identically |
+| Alt | `alt` | L/R variants treated identically |
+| Shift | `shift` | L/R variants treated identically |
 
 **Letters:** `a-z`
 
 **Numbers:** `0-9`
 
-**Special keys:** `return`/`enter`, `space`, `tab`, `esc`/`escape`, `backspace`, `print`/`printscreen`, `delete`, `insert`, `home`, `end`, `pageup`, `pagedown`
+**Special keys:** `return`/`enter`, `space`, `tab`, `esc`/`escape`, `backspace`, `delete`, `insert`, `home`, `end`, `pageup`, `pagedown`, `semicolon`/`;`
 
 **Arrows:** `left`, `right`, `up`, `down`
 
-**Function keys:** `f1-f12`, `calc` (i'm using slang)
+**Function keys:** `f1`-`f24`
 
-**Media keys:** `volumeup`, `volumedown`, `mute`, `brightnessup`, `brightnessdown`, `playpause`, `nextsong`, `previoussong`
+**Print screen:** `print`/`printscreen`
 
-**???:** `102nd`, `ro`
+**Numpad:** `kp0`-`kp9`, `kpplus`, `kpminus`, `kpasterisk`, `kpslash`, `kpenter`, `kpdot`
+
+**Media keys:** `volumeup`, `volumedown`, `mute`, `brightnessup`, `brightnessdown`, `playpause`/`play`, `nextsong`/`next`, `previoussong`/`previous`, `calc`/`calculator`
+
+**Gamepad:** `btn_south`, `btn_north`, `btn_east`, `btn_west`, `btn_tl`, `btn_tr`, `btn_tl2`, `btn_tr2`, `btn_start`, `btn_select`, `btn_mode`, `btn_thumbl`, `btn_thumbr`
+
+**Tablet/generic:** `btn_0`-`btn_9`, `btn_tool_pen`, `btn_touch`, `btn_stylus`, `btn_stylus2`
+
+**Other:** `102nd`, `ro`
 
 </details>
 
