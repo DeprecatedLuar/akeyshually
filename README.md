@@ -55,8 +55,14 @@ I made akeyshually to not only have my configs in a single git tracked file, but
 
 ## Installation
 
-**If you have Go:**
+![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat-square&logo=linux&logoColor=black) ![Go](https://img.shields.io/badge/Go-00ADD8?style=flat-square&logo=go&logoColor=white)
 
+### Universal
+```bash
+curl -sSL https://raw.githubusercontent.com/DeprecatedLuar/the-satellite/main/satellite.sh | bash -s -- install DeprecatedLuar/akeyshually
+```
+
+### Go
 ```bash
 go install github.com/DeprecatedLuar/akeyshually/cmd/akeyshually@latest
 ```
@@ -64,23 +70,18 @@ go install github.com/DeprecatedLuar/akeyshually/cmd/akeyshually@latest
 Make sure `$GOPATH/bin` (usually `~/go/bin`) is in your `PATH`.
 
 <details>
-<summary>If you don't have Go. Install script here.</summary>
+<summary>Other Install Methods</summary>
 
 <br>
 
-Downloads a pre-built binary from releases. The script delegates to [the-satellite](https://github.com/DeprecatedLuar/the-satellite), a reusable installer I use across projects for OS/arch detection and binary downloads.
+**Manual Install**
+1. Download binary for your OS from [releases](https://github.com/DeprecatedLuar/akeyshually/releases)
+2. Make executable: `chmod +x akeyshually`
+3. Move to PATH: `mv akeyshually ~/.local/bin/`
 
-```bash
-curl -sSL https://raw.githubusercontent.com/DeprecatedLuar/the-satellite/main/satellite.sh | bash -s -- install DeprecatedLuar/akeyshually
-```
+---
 
-</details>
-
-<details>
-<summary>Build from source</summary>
-
-<br>
-
+**From Source** (for try-harders)
 ```bash
 git clone https://github.com/DeprecatedLuar/akeyshually.git
 cd akeyshually
@@ -88,13 +89,12 @@ go build -ldflags="-s -w" -o akeyshually ./cmd/akeyshually
 mv akeyshually ~/.local/bin/
 ```
 
-</details>
+---
 
-**Prerequisites:** User must be in `input` group:
-```bash
-sudo usermod -aG input $USER
-# Logout and login for group change to take effect
-```
+>[!NOTE]
+> User must be in `input` group: `sudo usermod -aG input $USER` (logout required)
+
+</details>
 
 First run auto-generates config files in `~/.config/akeyshually/`. Just run `akeyshually` and you're good.
 
