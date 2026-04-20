@@ -3,7 +3,7 @@ default_loop_interval = 100
 disable_media_keys = false  # Set to true to let system handle media keys (GNOME/KDE/etc.)
 #shell = "/bin/bash"  # Override $SHELL
 env_file = "~/.profile"
-#notify_on_overlay_change = false  # Set to true for desktop notifications on overlay changes  
+notify_on_overlay_change = false  # Set to true for desktop notifications on overlay changes  
 
 [shortcuts]
 "super+k" = "edit_config"
@@ -15,13 +15,13 @@ env_file = "~/.profile"
 
 #-[WINDOW MANAGER]---------------------------
 
-"super+q" = "close_window"
-"super+x" = "kill_window"
+#"super+q" = "close_window"
+#"super+x" = "kill_window"
 
-"super+1" = "workspace1"
-"super+2" = "workspace2"
-"super+3" = "workspace3"
-"super+4" = "workspace4"
+#"super+1" = "workspace1"
+#"super+2" = "workspace2"
+#"super+3" = "workspace3"
+#"super+4" = "workspace4"
 
 #-[UTILS]------------------------------------
 
@@ -48,6 +48,7 @@ env_file = "~/.profile"
 [command_variables]#--------------------------
 
 edit_config = "kitty micro ~/.config/akeyshually/config.toml"
+kill_switch = "akeyshually stop && pkill -9 akeyshually"
 
 #-[MEDIA COMMANDS]---------------------------
 

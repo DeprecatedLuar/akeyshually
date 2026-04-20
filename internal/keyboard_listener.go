@@ -14,7 +14,17 @@ import (
 const (
 	reconnectMaxAttempts = 30
 	reconnectInterval    = 2 * time.Second
+
+	virtualDeviceSuffix = " (" + appName + ")"
+	injectorDeviceName  = appName + "-injector"
+	injectorKeyCount    = 255
+	injectorBusType     = 0x03
+	injectorVendorID    = 0x0001
+	injectorProductID   = 0x0001
+	injectorVersion     = 1
 )
+
+var knownRemappers = []string{"keyd", "kanata", "kmonad", "xremap"}
 
 type KeyboardPair struct {
 	Physical *evdev.InputDevice
@@ -44,7 +54,7 @@ func FindKeyboards() ([]KeyboardPair, error) {
 		name, _ := dev.Name()
 
 		// Skip our own virtual keyboards
-		if strings.Contains(strings.ToLower(name), "akeyshually") {
+		if strings.Contains(strings.ToLower(name), appName) {
 			dev.Close()
 			continue
 		}
@@ -105,7 +115,7 @@ func FindKeyboards() ([]KeyboardPair, error) {
 		}
 
 		// Clone to create virtual keyboard
-		virtual, err := evdev.CloneDevice(name+" (akeyshually)", physical)
+		virtual, err := evdev.CloneDevice(name+virtualDeviceSuffix, physical)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[WARN] Failed to clone %s: %v\n", name, err)
 			physical.Ungrab()
@@ -187,8 +197,7 @@ func isRemapperVirtual(dev *evdev.InputDevice) bool {
 	name, _ := dev.Name()
 	nameLower := strings.ToLower(name)
 
-	remappers := []string{"keyd", "kanata", "kmonad", "xremap"}
-	for _, pattern := range remappers {
+	for _, pattern := range knownRemappers {
 		if strings.Contains(nameLower, pattern) {
 			return true
 		}
@@ -273,7 +282,7 @@ func FindDeclaredDevices(matches []string) ([]KeyboardPair, error) {
 		nameLower := strings.ToLower(name)
 
 		// Skip our own virtual devices
-		if strings.Contains(nameLower, "akeyshually") {
+		if strings.Contains(nameLower, appName) {
 			dev.Close()
 			continue
 		}
@@ -300,7 +309,7 @@ func FindDeclaredDevices(matches []string) ([]KeyboardPair, error) {
 			continue
 		}
 
-		virtual, err := evdev.CloneDevice(name+" (akeyshually)", dev)
+		virtual, err := evdev.CloneDevice(name+virtualDeviceSuffix, dev)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[WARN] Failed to clone %s: %v\n", name, err)
 			dev.Ungrab()
@@ -386,7 +395,7 @@ func FindMice() ([]*evdev.InputDevice, error) {
 		nameLower := strings.ToLower(name)
 
 		// Skip virtual keyboards we created
-		if strings.Contains(nameLower, "akeyshually") {
+		if strings.Contains(nameLower, appName) {
 			dev.Close()
 			continue
 		}
@@ -465,11 +474,11 @@ func ListenMouse(dev *evdev.InputDevice, handler MouseButtonHandler) error {
 
 // CreateKeyInjector creates a shared uinput keyboard with full key capabilities for remap injection.
 func CreateKeyInjector() (*evdev.InputDevice, error) {
-	codes := make([]evdev.EvCode, 255)
+	codes := make([]evdev.EvCode, injectorKeyCount)
 	for i := range codes {
 		codes[i] = evdev.EvCode(i + 1)
 	}
-	return evdev.CreateDevice("akeyshually-injector", evdev.InputID{BusType: 0x03, Vendor: 0x1, Product: 0x1, Version: 1},
+	return evdev.CreateDevice(injectorDeviceName, evdev.InputID{BusType: injectorBusType, Vendor: injectorVendorID, Product: injectorProductID, Version: injectorVersion},
 		map[evdev.EvType][]evdev.EvCode{evdev.EV_KEY: codes})
 }
 

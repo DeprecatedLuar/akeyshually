@@ -27,21 +27,30 @@ type Settings struct {
 const (
 	defaultIntervalMs          = 150.0 // milliseconds, used when default_interval is not set in config
 	normalizeIntervalThreshold = 10.0  // values below this are treated as seconds, not milliseconds
+	configDirPerm              = 0755
+	configFilePerm             = 0644
+)
+
+var defaultConfigFiles = []string{"config.toml", "akeyshually.service"}
+
+const (
+	RemapTap         = 0 // down+up+SYN (default)
+	RemapHoldForever = 1 // keydown only; keys stay held until <<
+	RemapKeyUp       = 2 // keyup only for specified key
+	RemapReleaseAll  = 3 // release all persistently held keys
 )
 
 type BehaviorMode int
 
 const (
 	BehaviorNormal BehaviorMode = iota
-	BehaviorWhileHeld
-	BehaviorHold
-	BehaviorToggle
-	BehaviorRepeatWhileHeld
-	BehaviorRepeatToggle
+	BehaviorHold                // sustained while key held; command fires on press, remap mirrors lifecycle
+	BehaviorLongPress           // fires once after threshold, done
 	BehaviorSwitch
 	BehaviorDoubleTap
 	BehaviorPressRelease
-	BehaviorTapWhileHeld
+	BehaviorTapHold     // tap fires Commands[0], tap-then-hold sustains Commands[1]
+	BehaviorTapLongPress // tap fires Commands[0], tap-then-longpress fires Commands[1] once
 )
 
 type TimingMode int
@@ -55,13 +64,15 @@ type ParsedShortcut struct {
 	KeyCombo    string       // "super+k" (without suffix)
 	Behavior    BehaviorMode
 	Timing      TimingMode
-	Interval    float64  // Milliseconds (0 = use default) — tap window for tapwhileheld
-	HoldInterval float64 // Milliseconds (0 = use default) — hold threshold for tapwhileheld
+	Repeat      bool     // stacks on any trigger; stop condition follows trigger semantics
+	Interval    float64  // Milliseconds (0 = use default) — tap window for taphold
+	HoldInterval float64 // Milliseconds (0 = use default) — hold threshold for taphold
 	Commands    []string // Single command OR switch array
 	Passthrough bool     // Ignore modifiers when matching
 	AliasGroup  string   // Canonical key for shared state (e.g. "f1/f2.switch"), empty if not an alias
-	IsRemap     bool     // true if value starts with ">"
-	RemapCombo  string   // the combo string after ">", e.g. "ctrl+z"
+	IsRemap     bool     // true if value starts with ">" or "<"
+	RemapCombo  string   // the key/combo to remap to (empty for RemapReleaseAll)
+	RemapMode   int      // RemapTap, RemapHoldForever, RemapKeyUp, RemapReleaseAll
 }
 
 type Config struct {
@@ -351,26 +362,51 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 		return nil, fmt.Errorf("value must be string or array of strings")
 	}
 
-	// Detect remap syntax: value starting with ">"
-	if len(shortcut.Commands) == 1 && strings.HasPrefix(shortcut.Commands[0], ">") {
-		remapTarget := shortcut.Commands[0][1:]
-		if remapTarget == "" {
-			return nil, fmt.Errorf("remap target cannot be empty")
+	// Detect remap syntax: value starting with ">" or "<"
+	if len(shortcut.Commands) == 1 {
+		val := shortcut.Commands[0]
+		switch {
+		case val == "<<":
+			shortcut.IsRemap = true
+			shortcut.RemapMode = RemapReleaseAll
+		case strings.HasPrefix(val, ">>"):
+			target := val[2:]
+			if target == "" {
+				return nil, fmt.Errorf("remap target cannot be empty")
+			}
+			shortcut.IsRemap = true
+			shortcut.RemapCombo = normalizeKeyCombo(target)
+			shortcut.RemapMode = RemapHoldForever
+		case strings.HasPrefix(val, ">"):
+			target := val[1:]
+			if target == "" {
+				return nil, fmt.Errorf("remap target cannot be empty")
+			}
+			shortcut.IsRemap = true
+			shortcut.RemapCombo = normalizeKeyCombo(target)
+			shortcut.RemapMode = RemapTap
+		case strings.HasPrefix(val, "<"):
+			target := val[1:]
+			if target == "" {
+				return nil, fmt.Errorf("remap keyup target cannot be empty")
+			}
+			shortcut.IsRemap = true
+			shortcut.RemapCombo = normalizeKeyCombo(target)
+			shortcut.RemapMode = RemapKeyUp
 		}
-		shortcut.IsRemap = true
-		shortcut.RemapCombo = normalizeKeyCombo(remapTarget)
 	}
 
 	// Parse modifiers (behavior and timing)
-	intervalRegex := regexp.MustCompile(`^(whileheld|hold|toggle|repeat-whileheld|repeat-toggle|doubletap)\((\d+\.?\d*|\d*\.\d+)\)$`)
-	twhRegex := regexp.MustCompile(`^tap(?:\((\d+\.?\d*|\d*\.\d+)\))?whileheld(?:\((\d+\.?\d*|\d*\.\d+)\))?$`)
+	intervalRegex := regexp.MustCompile(`^(hold|longpress|doubletap)\((\d+\.?\d*|\d*\.\d+)\)$`)
+	tapHoldRegex := regexp.MustCompile(`^tap(?:\((\d+\.?\d*|\d*\.\d+)\))?hold(?:\((\d+\.?\d*|\d*\.\d+)\))?$`)
+	tapLongPressRegex := regexp.MustCompile(`^tap(?:\((\d+\.?\d*|\d*\.\d+)\))?longpress(?:\((\d+\.?\d*|\d*\.\d+)\))?$`)
 
 	for i := 1; i < len(parts); i++ {
 		part := strings.ToLower(parts[i])
 
-		// Check for tapwhileheld with optional intervals: tap(N)whileheld(N)
-		if matches := twhRegex.FindStringSubmatch(part); matches != nil {
-			shortcut.Behavior = BehaviorTapWhileHeld
+		// Check for taphold with optional intervals: tap(N)hold(N)
+		if matches := tapHoldRegex.FindStringSubmatch(part); matches != nil {
+			shortcut.Behavior = BehaviorTapHold
 			if matches[1] != "" {
 				interval, _ := strconv.ParseFloat(matches[1], 64)
 				shortcut.Interval = normalizeInterval(interval)
@@ -382,22 +418,30 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 			continue
 		}
 
-		// Check for interval notation
+		// Check for taplongpress with optional intervals: tap(N)longpress(N)
+		if matches := tapLongPressRegex.FindStringSubmatch(part); matches != nil {
+			shortcut.Behavior = BehaviorTapLongPress
+			if matches[1] != "" {
+				interval, _ := strconv.ParseFloat(matches[1], 64)
+				shortcut.Interval = normalizeInterval(interval)
+			}
+			if matches[2] != "" {
+				interval, _ := strconv.ParseFloat(matches[2], 64)
+				shortcut.HoldInterval = normalizeInterval(interval)
+			}
+			continue
+		}
+
+		// Check for interval notation: hold(N), longpress(N), doubletap(N)
 		if matches := intervalRegex.FindStringSubmatch(part); matches != nil {
 			modifierName := matches[1]
 			interval, _ := strconv.ParseFloat(matches[2], 64)
 
 			switch modifierName {
-			case "whileheld":
-				shortcut.Behavior = BehaviorWhileHeld
 			case "hold":
 				shortcut.Behavior = BehaviorHold
-			case "toggle":
-				shortcut.Behavior = BehaviorToggle
-			case "repeat-whileheld":
-				shortcut.Behavior = BehaviorRepeatWhileHeld
-			case "repeat-toggle":
-				shortcut.Behavior = BehaviorRepeatToggle
+			case "longpress":
+				shortcut.Behavior = BehaviorLongPress
 			case "doubletap":
 				shortcut.Behavior = BehaviorDoubleTap
 			}
@@ -407,16 +451,12 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 
 		// Parse behavior modes (without interval)
 		switch part {
-		case "whileheld":
-			shortcut.Behavior = BehaviorWhileHeld
 		case "hold":
 			shortcut.Behavior = BehaviorHold
-		case "toggle":
-			shortcut.Behavior = BehaviorToggle
-		case "repeat-whileheld":
-			shortcut.Behavior = BehaviorRepeatWhileHeld
-		case "repeat-toggle":
-			shortcut.Behavior = BehaviorRepeatToggle
+		case "longpress":
+			shortcut.Behavior = BehaviorLongPress
+		case "repeat":
+			shortcut.Repeat = true
 		case "switch":
 			shortcut.Behavior = BehaviorSwitch
 		case "doubletap":
@@ -429,12 +469,27 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 			shortcut.Timing = TimingPress
 		case "passthrough":
 			shortcut.Passthrough = true
+		// Migration errors for removed syntax
+		case "whileheld":
+			return nil, fmt.Errorf("whileheld removed: use .hold")
+		case "repeat-whileheld":
+			return nil, fmt.Errorf("repeat-whileheld removed: use .hold.repeat")
+		case "repeat-toggle":
+			return nil, fmt.Errorf("repeat-toggle removed: use .onpress.repeat")
+		case "toggle":
+			return nil, fmt.Errorf("toggle removed: use .onpress.repeat")
+		case "tapwhileheld":
+			return nil, fmt.Errorf("tapwhileheld removed: use .taphold")
 		default:
 			return nil, fmt.Errorf("unknown modifier: %s", part)
 		}
 	}
 
 	// Validate combinations
+	if shortcut.Repeat && shortcut.Behavior == BehaviorLongPress {
+		return nil, fmt.Errorf("longpress.repeat is not valid: longpress is one-shot")
+	}
+
 	switch shortcut.Behavior {
 	case BehaviorSwitch:
 		if len(shortcut.Commands) < 2 {
@@ -443,6 +498,18 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 	case BehaviorPressRelease:
 		if len(shortcut.Commands) != 2 {
 			return nil, fmt.Errorf("pressrelease behavior requires exactly 2 commands")
+		}
+	case BehaviorTapHold:
+		if len(shortcut.Commands) != 1 {
+			return nil, fmt.Errorf("taphold behavior requires exactly 1 command")
+		}
+	case BehaviorTapLongPress:
+		if len(shortcut.Commands) != 2 {
+			return nil, fmt.Errorf("taplongpress behavior requires exactly 2 commands")
+		}
+	case BehaviorHold:
+		if len(shortcut.Commands) != 1 && len(shortcut.Commands) != 2 {
+			return nil, fmt.Errorf("hold behavior requires 1 command or array of 2 commands")
 		}
 	default:
 		if len(shortcut.Commands) != 1 {
@@ -457,24 +524,20 @@ func behaviorName(b BehaviorMode) string {
 	switch b {
 	case BehaviorNormal:
 		return "normal"
-	case BehaviorWhileHeld:
-		return "whileheld"
 	case BehaviorHold:
 		return "hold"
-	case BehaviorToggle:
-		return "toggle"
-	case BehaviorRepeatWhileHeld:
-		return "repeat-whileheld"
-	case BehaviorRepeatToggle:
-		return "repeat-toggle"
+	case BehaviorLongPress:
+		return "longpress"
 	case BehaviorSwitch:
 		return "switch"
 	case BehaviorDoubleTap:
 		return "doubletap"
 	case BehaviorPressRelease:
 		return "pressrelease"
-	case BehaviorTapWhileHeld:
-		return "tapwhileheld"
+	case BehaviorTapHold:
+		return "taphold"
+	case BehaviorTapLongPress:
+		return "taplongpress"
 	default:
 		return "unknown"
 	}
@@ -501,19 +564,18 @@ func EnsureConfigExists() error {
 		return err
 	}
 
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+	if err := os.MkdirAll(configDir, configDirPerm); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	files := []string{"config.toml", "akeyshually.service"}
-	for _, filename := range files {
+	for _, filename := range defaultConfigFiles {
 		destPath := filepath.Join(configDir, filename)
 		if _, err := os.Stat(destPath); os.IsNotExist(err) {
 			data, err := embeddedConfigs.ReadFile("defaults/" + filename)
 			if err != nil {
 				return fmt.Errorf("failed to read embedded %s: %w", filename, err)
 			}
-			if err := os.WriteFile(destPath, data, 0644); err != nil {
+			if err := os.WriteFile(destPath, data, configFilePerm); err != nil {
 				return fmt.Errorf("failed to write %s: %w", filename, err)
 			}
 		}

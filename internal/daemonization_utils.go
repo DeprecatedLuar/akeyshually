@@ -10,16 +10,25 @@ import (
 	"syscall"
 )
 
+const (
+	appName           = "akeyshually"
+	notifySendBin     = "notify-send"
+	notifyUrgencyCrit = "critical"
+	notifyUrgencyNorm = "normal"
+	pidFilePerm       = 0644
+	devNullPath       = "/dev/null"
+)
+
 // NotifyError sends a desktop notification for critical errors
 // Fails silently if notify-send is not available
 func NotifyError(title, message string) {
-	cmd := exec.Command("notify-send", "-u", "critical", "-a", "akeyshually", title, message)
+	cmd := exec.Command(notifySendBin, "-u", notifyUrgencyCrit, "-a", appName, title, message)
 	cmd.Run() // Fire and forget
 }
 
 // NotifyInfo sends a desktop notification for informational messages
 func NotifyInfo(title, message string) {
-	cmd := exec.Command("notify-send", "-u", "normal", "-a", "akeyshually", title, message)
+	cmd := exec.Command(notifySendBin, "-u", notifyUrgencyNorm, "-a", appName, title, message)
 	cmd.Run() // Fire and forget
 }
 
@@ -40,7 +49,7 @@ func WritePidFile(pid int) error {
 	}
 
 	pidStr := strconv.Itoa(pid)
-	if err := os.WriteFile(pidPath, []byte(pidStr), 0644); err != nil {
+	if err := os.WriteFile(pidPath, []byte(pidStr), pidFilePerm); err != nil {
 		return fmt.Errorf("failed to write pidfile: %w", err)
 	}
 
@@ -166,7 +175,7 @@ func SpawnDaemon(replacingPid int) (int, error) {
 	}
 
 	// Open /dev/null for stdin, stdout, stderr redirection
-	devNull, err := os.OpenFile("/dev/null", os.O_RDWR, 0)
+	devNull, err := os.OpenFile(devNullPath, os.O_RDWR, 0)
 	if err != nil {
 		return 0, fmt.Errorf("failed to open /dev/null: %w", err)
 	}

@@ -19,19 +19,20 @@ const (
 	twhFirstPress = 1 // first press down, waiting for release
 	twhPriming    = 2 // first tap done, timer1 running
 	twhArmed      = 3 // second press down, timer2 running
-	twhActive     = 4 // whileheld process running
+	twhActive     = 4 // hold process or loop running
 )
 
 type LoopState struct {
-	mu            sync.Mutex
-	active        map[string]context.CancelFunc // repeat loops: combo -> cancel
-	heldProcesses map[string]*exec.Cmd          // whileheld: combo -> process
-	heldKeys      map[string][]uint16           // whileheld remap: combo -> key codes held down
-	holdTimers    map[string]context.CancelFunc // hold: combo -> cancel timer
-	tapHoldTimers map[string]context.CancelFunc         // tap-vs-hold: combo -> cancel hold timer
-	tapHoldNormal map[string]*config.ParsedShortcut     // tap-vs-hold: combo -> normal shortcut to fire on tap
-	twhPhase      map[string]int                        // tapwhileheld: combo -> phase
-	twhCancel     map[string]context.CancelFunc         // tapwhileheld: combo -> active timer cancel
+	mu             sync.Mutex
+	active         map[string]context.CancelFunc // repeat loops: combo -> cancel
+	heldProcesses  map[string]*exec.Cmd          // hold: combo -> process
+	heldKeys       map[string][]uint16           // hold remap: combo -> key codes held down
+	holdTimers     map[string]context.CancelFunc // longpress: combo -> cancel timer
+	tapHoldTimers  map[string]context.CancelFunc         // tap-vs-hold: combo -> cancel hold timer
+	tapHoldNormal  map[string]*config.ParsedShortcut     // tap-vs-hold: combo -> normal shortcut to fire on tap
+	twhPhase       map[string]int                        // taphold: combo -> phase
+	twhCancel      map[string]context.CancelFunc         // taphold: combo -> active timer cancel
+	persistentHeld map[string][]uint16                   // >>: key name -> held key codes (shared across all shortcuts)
 }
 
 func runTickerLoop(ctx context.Context, interval float64, fn func()) {
@@ -49,14 +50,15 @@ func runTickerLoop(ctx context.Context, interval float64, fn func()) {
 
 func NewLoopState() *LoopState {
 	return &LoopState{
-		active:        make(map[string]context.CancelFunc),
-		heldProcesses: make(map[string]*exec.Cmd),
-		heldKeys:      make(map[string][]uint16),
-		holdTimers:    make(map[string]context.CancelFunc),
-		tapHoldTimers: make(map[string]context.CancelFunc),
-		tapHoldNormal: make(map[string]*config.ParsedShortcut),
-		twhPhase:      make(map[string]int),
-		twhCancel:     make(map[string]context.CancelFunc),
+		active:         make(map[string]context.CancelFunc),
+		heldProcesses:  make(map[string]*exec.Cmd),
+		heldKeys:       make(map[string][]uint16),
+		holdTimers:     make(map[string]context.CancelFunc),
+		tapHoldTimers:  make(map[string]context.CancelFunc),
+		tapHoldNormal:  make(map[string]*config.ParsedShortcut),
+		twhPhase:       make(map[string]int),
+		twhCancel:      make(map[string]context.CancelFunc),
+		persistentHeld: make(map[string][]uint16),
 	}
 }
 
@@ -93,10 +95,15 @@ func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *Loo
 							doubleTapState.CancelTimer()
 
 							if shortcut := m.GetDoubleTapShortcut(code); shortcut != nil {
-								resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
-								LogMatch(matcher.GetKeyName(code)+".doubletap", fmt.Sprintf("%d", code))
-								LogTrigger(resolvedCmd)
-								Execute(resolvedCmd, cfg)
+								dtCombo := matcher.GetKeyName(code)
+								LogMatch(dtCombo+".doubletap", fmt.Sprintf("%d", code))
+								if shortcut.Repeat {
+									toggleLoop(dtCombo, shortcut, cfg, m, loopState)
+								} else {
+									resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
+									LogTrigger(resolvedCmd)
+									Execute(resolvedCmd, cfg)
+								}
 							}
 							m.UpdateModifierState(code, false)
 							return false // Forward modifier
@@ -140,11 +147,15 @@ func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *Loo
 			LogKey(matcher.GetKeyName(code), code)
 			m.ClearTapCandidate() // Any non-modifier clears tap
 
-			// Compute combo early for tapwhileheld check (takes priority over doubletap)
+			// Compute combo early for taphold/taplongpress check (takes priority over doubletap)
 			combo := m.GetCurrentCombo(code)
 
-			// Handle tapwhileheld state machine
-			if twh := m.CheckShortcut(combo, config.BehaviorTapWhileHeld, config.TimingPress); twh != nil {
+			// Handle taphold/taplongpress state machine
+			twh := m.CheckShortcut(combo, config.BehaviorTapHold, config.TimingPress)
+			if twh == nil {
+				twh = m.CheckShortcut(combo, config.BehaviorTapLongPress, config.TimingPress)
+			}
+			if twh != nil {
 				loopState.mu.Lock()
 				phase := loopState.twhPhase[combo]
 				loopState.mu.Unlock()
@@ -169,13 +180,13 @@ func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *Loo
 				loopState.mu.Unlock()
 
 				hasOtherBehaviors := m.CheckShortcut(combo, config.BehaviorNormal, config.TimingPress) != nil ||
-					m.CheckShortcut(combo, config.BehaviorWhileHeld, config.TimingPress) != nil ||
-					m.CheckShortcut(combo, config.BehaviorHold, config.TimingPress) != nil
+					m.CheckShortcut(combo, config.BehaviorHold, config.TimingPress) != nil ||
+					m.CheckShortcut(combo, config.BehaviorLongPress, config.TimingPress) != nil
 				if !hasOtherBehaviors {
 					bufferedKeys[code] = true
 					return true
 				}
-				// Fall through to normal/whileheld/hold handling
+				// Fall through to normal/hold/longpress handling
 			}
 
 			// Check if this key has a doubletap shortcut - suppress and wait for release
@@ -188,50 +199,48 @@ func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *Loo
 			pressMatched := false
 
 			normalShortcut := m.CheckShortcut(combo, config.BehaviorNormal, config.TimingPress)
+			longpressShortcut := m.CheckShortcut(combo, config.BehaviorLongPress, config.TimingPress)
 			holdShortcut := m.CheckShortcut(combo, config.BehaviorHold, config.TimingPress)
-			whileheldShortcut := m.CheckShortcut(combo, config.BehaviorWhileHeld, config.TimingPress)
 
-			if normalShortcut != nil && holdShortcut != nil {
-				// Tap-vs-hold: defer decision until release or threshold
+			if normalShortcut != nil && longpressShortcut != nil {
+				// Tap-vs-longpress: defer decision until release or threshold
+				startTapHoldTimer(combo, normalShortcut, longpressShortcut, cfg, loopState, m.GetComboCodes(code), virtual, m.GetCurrentModifiers())
+				pressMatched = true
+			} else if normalShortcut != nil && holdShortcut != nil {
+				// Tap-vs-hold: same timer logic, hold starts on threshold
 				startTapHoldTimer(combo, normalShortcut, holdShortcut, cfg, loopState, m.GetComboCodes(code), virtual, m.GetCurrentModifiers())
 				pressMatched = true
-			} else if normalShortcut != nil && whileheldShortcut != nil {
-				// Tap-vs-whileheld: same timer logic, whileheld starts on threshold
-				startTapHoldTimer(combo, normalShortcut, whileheldShortcut, cfg, loopState, m.GetComboCodes(code), virtual, m.GetCurrentModifiers())
-				pressMatched = true
 			} else if normalShortcut != nil {
-				LogMatch(combo, m.GetComboCodes(code))
-				executeShortcut(normalShortcut, cfg, virtual, m.GetCurrentModifiers())
-				pressMatched = true
-			} else if holdShortcut != nil {
-				LogMatch(combo+".hold", m.GetComboCodes(code))
-				startHoldTimer(combo, holdShortcut, cfg, loopState)
-				pressMatched = true
-			}
-
-			// Check whileheld shortcuts (start process, kill on release)
-			if !pressMatched {
-				if whileheldShortcut != nil {
-					LogMatch(combo+".whileheld", m.GetComboCodes(code))
-					startHeldProcess(combo, whileheldShortcut, cfg, loopState, virtual, m.GetCurrentModifiers())
-					pressMatched = true
+				if normalShortcut.Repeat {
+					LogMatch(combo+".repeat", m.GetComboCodes(code))
+					toggleLoop(combo, normalShortcut, cfg, m, loopState)
+				} else {
+					LogMatch(combo, m.GetComboCodes(code))
+					executeShortcutWithState(normalShortcut, cfg, virtual, m.GetCurrentModifiers(), loopState)
 				}
+				pressMatched = true
+			} else if longpressShortcut != nil {
+				LogMatch(combo+".longpress", m.GetComboCodes(code))
+				startHoldTimer(combo, longpressShortcut, cfg, loopState)
+				pressMatched = true
 			}
 
-			// Check repeat-whileheld shortcuts (repeat while held, stop on release)
+			// Check hold shortcuts (.hold)
 			if !pressMatched {
-				if shortcut := m.CheckShortcut(combo, config.BehaviorRepeatWhileHeld, config.TimingPress); shortcut != nil {
-					LogMatch(combo+".repeat-whileheld", m.GetComboCodes(code))
-					startLoop(combo, shortcut, cfg, loopState)
-					pressMatched = true
-				}
-			}
-
-			// Check repeat-toggle shortcuts (toggle repeat loop on/off)
-			if !pressMatched {
-				if shortcut := m.CheckShortcut(combo, config.BehaviorRepeatToggle, config.TimingPress); shortcut != nil {
-					LogMatch(combo+".repeat-toggle", m.GetComboCodes(code))
-					toggleLoop(combo, shortcut, cfg, m, loopState)
+				if holdShortcut != nil {
+					LogMatch(combo+".hold", m.GetComboCodes(code))
+					if holdShortcut.Repeat {
+						startHoldLoop(combo, holdShortcut, cfg, loopState)
+					} else if holdShortcut.IsRemap {
+						startHeldProcess(combo, holdShortcut, cfg, loopState, virtual, m.GetCurrentModifiers())
+					} else if len(holdShortcut.Commands) == 2 {
+						resolvedCmd := cfg.ResolveCommand(holdShortcut.Commands[0])
+						LogTrigger(resolvedCmd)
+						Execute(resolvedCmd, cfg)
+						bufferedKeys[code] = true
+					} else {
+						executeShortcutWithState(holdShortcut, cfg, virtual, m.GetCurrentModifiers(), loopState)
+					}
 					pressMatched = true
 				}
 			}
@@ -274,8 +283,13 @@ func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *Loo
 		if value == 0 {
 			combo := m.GetCurrentCombo(code)
 
-			// Handle tapwhileheld state machine
-			if twh := m.CheckShortcut(combo, config.BehaviorTapWhileHeld, config.TimingPress); twh != nil {
+			// Handle taphold/taplongpress state machine
+			if twhRelease := func() *config.ParsedShortcut {
+				if s := m.CheckShortcut(combo, config.BehaviorTapHold, config.TimingPress); s != nil {
+					return s
+				}
+				return m.CheckShortcut(combo, config.BehaviorTapLongPress, config.TimingPress)
+			}(); twhRelease != nil {
 				loopState.mu.Lock()
 				phase := loopState.twhPhase[combo]
 				loopState.mu.Unlock()
@@ -292,15 +306,19 @@ func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *Loo
 						loopState.mu.Lock()
 						loopState.twhPhase[combo] = twhPriming
 						loopState.mu.Unlock()
-						startTwhPrimingTimer(combo, twh, cfg, loopState)
+						startTwhPrimingTimer(combo, twhRelease, cfg, loopState)
 					} else {
 						loopState.mu.Lock()
 						loopState.twhPhase[combo] = twhIdle
 						loopState.mu.Unlock()
 					}
-					// If we suppressed the first press (standalone tapwhileheld), suppress release too
+					// If we suppressed the first press (standalone taphold), suppress release too
 					if bufferedKeys[code] {
 						delete(bufferedKeys, code)
+						if shortcut := m.CheckShortcut(combo, config.BehaviorNormal, config.TimingRelease); shortcut != nil {
+							LogMatch(combo+".onrelease", m.GetComboCodes(code))
+							executeShortcutWithState(shortcut, cfg, virtual, m.GetCurrentModifiers(), loopState)
+						}
 						return true
 					}
 					// Otherwise fall through — normal release handling proceeds
@@ -316,26 +334,39 @@ func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *Loo
 					loopState.mu.Unlock()
 					delete(bufferedKeys, code)
 					if dtShortcut := m.GetDoubleTapShortcut(code); dtShortcut != nil {
-						resolvedCmd := cfg.ResolveCommand(dtShortcut.Commands[0])
 						LogMatch(combo+".doubletap", m.GetComboCodes(code))
-						LogTrigger(resolvedCmd)
-						Execute(resolvedCmd, cfg)
+						if dtShortcut.Repeat {
+							toggleLoop(combo, dtShortcut, cfg, m, loopState)
+						} else {
+							resolvedCmd := cfg.ResolveCommand(dtShortcut.Commands[0])
+							LogTrigger(resolvedCmd)
+							Execute(resolvedCmd, cfg)
+						}
 					}
 					return true
 
 				case twhActive:
-					// Stop whileheld process
+					// Stop whileheld process or loop
 					stopHeldProcess(combo, loopState, virtual)
+					stopLoop(combo, loopState)
 					loopState.mu.Lock()
 					loopState.twhPhase[combo] = twhIdle
 					loopState.mu.Unlock()
 					delete(bufferedKeys, code)
+					if shortcut := m.CheckShortcut(combo, config.BehaviorNormal, config.TimingRelease); shortcut != nil {
+						LogMatch(combo+".onrelease", m.GetComboCodes(code))
+						executeShortcutWithState(shortcut, cfg, virtual, m.GetCurrentModifiers(), loopState)
+					}
 					return true
 				}
 			}
 
 			// Fire tap if released before hold threshold
 			if fireTapIfPending(combo, loopState, cfg, m.GetComboCodes(code), virtual, m.GetCurrentModifiers()) {
+				if shortcut := m.CheckShortcut(combo, config.BehaviorNormal, config.TimingRelease); shortcut != nil {
+					LogMatch(combo+".onrelease", m.GetComboCodes(code))
+					executeShortcutWithState(shortcut, cfg, virtual, m.GetCurrentModifiers(), loopState)
+				}
 				return true
 			}
 
@@ -357,10 +388,14 @@ func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *Loo
 						// Second tap - execute doubletap
 						doubleTapState.CancelTimer()
 						if shortcut := m.GetDoubleTapShortcut(code); shortcut != nil {
-							resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
 							LogMatch(combo+".doubletap", m.GetComboCodes(code))
-							LogTrigger(resolvedCmd)
-							Execute(resolvedCmd, cfg)
+							if shortcut.Repeat {
+								toggleLoop(combo, shortcut, cfg, m, loopState)
+							} else {
+								resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
+								LogTrigger(resolvedCmd)
+								Execute(resolvedCmd, cfg)
+							}
 						}
 						return true // Suppress
 					} else {
@@ -394,7 +429,7 @@ func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *Loo
 				delete(bufferedKeys, code)
 
 				// Execute release shortcuts
-				executeReleaseShortcuts(combo, m, cfg, code, virtual, m.GetCurrentModifiers())
+				executeReleaseShortcuts(combo, m, cfg, code, virtual, m.GetCurrentModifiers(), loopState)
 				return true // Suppress release
 			}
 		}
@@ -420,15 +455,49 @@ func checkModifierAlone(modifiers matcher.ModifierState) bool {
 	return count == 1
 }
 
-func executeShortcut(shortcut *config.ParsedShortcut, cfg *config.Config, virtual *evdev.InputDevice, heldModifiers matcher.ModifierState) {
+func executeShortcutWithState(shortcut *config.ParsedShortcut, cfg *config.Config, virtual *evdev.InputDevice, heldModifiers matcher.ModifierState, loopState *LoopState) {
 	if shortcut.IsRemap {
-		LogTrigger(">" + shortcut.RemapCombo)
 		if virtual == nil {
 			fmt.Fprintf(os.Stderr, "Remap error: no virtual device available\n")
 			return
 		}
-		if err := EmitKeyCombo(virtual, shortcut.RemapCombo, heldModifiers); err != nil {
-			fmt.Fprintf(os.Stderr, "Remap error: %v\n", err)
+		switch shortcut.RemapMode {
+		case config.RemapTap:
+			LogTrigger(">" + shortcut.RemapCombo)
+			if err := EmitKeyCombo(virtual, shortcut.RemapCombo, heldModifiers); err != nil {
+				fmt.Fprintf(os.Stderr, "Remap error: %v\n", err)
+			}
+		case config.RemapHoldForever:
+			if loopState == nil {
+				fmt.Fprintf(os.Stderr, "Remap error: >> requires loopState\n")
+				return
+			}
+			LogTrigger(">>" + shortcut.RemapCombo)
+			loopState.mu.Lock()
+			codes := EmitKeysDown(virtual, shortcut.RemapCombo, heldModifiers)
+			if len(codes) > 0 {
+				loopState.persistentHeld[shortcut.RemapCombo] = codes
+			}
+			loopState.mu.Unlock()
+		case config.RemapKeyUp:
+			LogTrigger("<" + shortcut.RemapCombo)
+			code, ok := matcher.ResolveKeyCode(shortcut.RemapCombo)
+			if !ok {
+				fmt.Fprintf(os.Stderr, "Remap error: unknown key %q\n", shortcut.RemapCombo)
+				return
+			}
+			EmitKeysUp(virtual, []uint16{code})
+		case config.RemapReleaseAll:
+			if loopState == nil {
+				return
+			}
+			LogTrigger("<<")
+			loopState.mu.Lock()
+			for key, codes := range loopState.persistentHeld {
+				EmitKeysUp(virtual, codes)
+				delete(loopState.persistentHeld, key)
+			}
+			loopState.mu.Unlock()
 		}
 		return
 	}
@@ -482,9 +551,9 @@ func startHeldProcess(combo string, shortcut *config.ParsedShortcut, cfg *config
 		if codes, exists := state.heldKeys[combo]; exists {
 			EmitKeysUp(virtual, codes)
 		}
-		LogDebug("whileheld remap: pressing down >%s", shortcut.RemapCombo)
+		LogDebug("hold remap: pressing down >%s", shortcut.RemapCombo)
 		codes := EmitKeysDown(virtual, shortcut.RemapCombo, heldModifiers)
-		LogDebug("whileheld remap: stored %d codes for %s", len(codes), combo)
+		LogDebug("hold remap: stored %d codes for %s", len(codes), combo)
 		if len(codes) > 0 {
 			state.heldKeys[combo] = codes
 		}
@@ -514,7 +583,7 @@ func stopHeldProcess(combo string, state *LoopState, virtual *evdev.InputDevice)
 	defer state.mu.Unlock()
 
 	if codes, exists := state.heldKeys[combo]; exists {
-		LogDebug("whileheld remap: releasing %d codes for %s", len(codes), combo)
+		LogDebug("hold remap: releasing %d codes for %s", len(codes), combo)
 		EmitKeysUp(virtual, codes)
 		delete(state.heldKeys, combo)
 		return
@@ -525,7 +594,7 @@ func stopHeldProcess(combo string, state *LoopState, virtual *evdev.InputDevice)
 	baseKey := baseKeyFromCombo(combo)
 	for storedCombo, codes := range state.heldKeys {
 		if baseKeyFromCombo(storedCombo) == baseKey {
-			LogDebug("whileheld remap: releasing %d codes for %s (combo drifted to %s)", len(codes), storedCombo, combo)
+			LogDebug("hold remap: releasing %d codes for %s (combo drifted to %s)", len(codes), storedCombo, combo)
 			EmitKeysUp(virtual, codes)
 			delete(state.heldKeys, storedCombo)
 			return
@@ -580,6 +649,32 @@ func startHoldTimer(combo string, shortcut *config.ParsedShortcut, cfg *config.C
 	}()
 }
 
+func startHoldLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, state *LoopState) {
+	state.mu.Lock()
+	if cancel, exists := state.holdTimers[combo]; exists {
+		cancel()
+	}
+	interval := shortcut.Interval
+	if interval == 0 {
+		interval = cfg.Settings.DefaultInterval
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	state.holdTimers[combo] = cancel
+	state.mu.Unlock()
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Duration(interval) * time.Millisecond):
+			state.mu.Lock()
+			delete(state.holdTimers, combo)
+			state.mu.Unlock()
+			startLoop(combo, shortcut, cfg, state)
+		}
+	}()
+}
+
 func cancelHoldTimer(combo string, state *LoopState) {
 	state.mu.Lock()
 	defer state.mu.Unlock()
@@ -590,7 +685,7 @@ func cancelHoldTimer(combo string, state *LoopState) {
 	}
 }
 
-func toggleLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, m *matcher.Matcher, state *LoopState) {
+func toggleLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, m *matcher.Matcher, _ *LoopState) {
 	if m.IsToggleActive(combo) {
 		// Stop loop
 		if cancel := m.StopToggleLoop(combo); cancel != nil {
@@ -626,22 +721,17 @@ func executeSwitchShortcut(combo string, shortcut *config.ParsedShortcut, m *mat
 	Execute(resolvedCmd, cfg)
 }
 
-func executeReleaseShortcuts(combo string, m *matcher.Matcher, cfg *config.Config, code uint16, virtual *evdev.InputDevice, heldModifiers matcher.ModifierState) {
+func executeReleaseShortcuts(combo string, m *matcher.Matcher, cfg *config.Config, code uint16, virtual *evdev.InputDevice, heldModifiers matcher.ModifierState, loopState *LoopState) {
 	codes := m.GetComboCodes(code)
 
 	if shortcut := m.CheckShortcut(combo, config.BehaviorNormal, config.TimingRelease); shortcut != nil {
-		LogMatch(combo+".onrelease", codes)
-		executeShortcut(shortcut, cfg, virtual, heldModifiers)
-	}
-
-	if shortcut := m.CheckShortcut(combo, config.BehaviorRepeatWhileHeld, config.TimingRelease); shortcut != nil {
-		LogMatch(combo+".repeat-whileheld.onrelease", codes)
-		executeShortcut(shortcut, cfg, virtual, heldModifiers)
-	}
-
-	if shortcut := m.CheckShortcut(combo, config.BehaviorRepeatToggle, config.TimingRelease); shortcut != nil {
-		LogMatch(combo+".repeat-toggle.onrelease", codes)
-		toggleLoop(combo, shortcut, cfg, m, nil)
+		if shortcut.Repeat {
+			LogMatch(combo+".repeat.onrelease", codes)
+			toggleLoop(combo, shortcut, cfg, m, loopState)
+		} else {
+			LogMatch(combo+".onrelease", codes)
+			executeShortcutWithState(shortcut, cfg, virtual, heldModifiers, loopState)
+		}
 	}
 
 	if shortcut := m.CheckShortcut(combo, config.BehaviorSwitch, config.TimingRelease); shortcut != nil {
@@ -654,6 +744,15 @@ func executeReleaseShortcuts(combo string, m *matcher.Matcher, cfg *config.Confi
 		resolvedCmd := cfg.ResolveCommand(shortcut.Commands[1])
 		LogTrigger(resolvedCmd)
 		Execute(resolvedCmd, cfg)
+	}
+
+	if shortcut := m.CheckShortcut(combo, config.BehaviorHold, config.TimingPress); shortcut != nil {
+		if len(shortcut.Commands) == 2 {
+			LogMatch(combo+".hold.release", codes)
+			resolvedCmd := cfg.ResolveCommand(shortcut.Commands[1])
+			LogTrigger(resolvedCmd)
+			Execute(resolvedCmd, cfg)
+		}
 	}
 }
 
@@ -684,12 +783,12 @@ func startTapHoldTimer(combo string, normalShortcut *config.ParsedShortcut, hold
 				delete(state.tapHoldTimers, combo)
 				delete(state.tapHoldNormal, combo)
 				state.mu.Unlock()
-				if holdShortcut.Behavior == config.BehaviorWhileHeld {
-					LogMatch(combo+".whileheld", codes)
+				if holdShortcut.Behavior == config.BehaviorHold && holdShortcut.IsRemap {
+					LogMatch(combo+".hold", codes)
 					startHeldProcess(combo, holdShortcut, cfg, state, virtual, heldModifiers)
 				} else {
 					LogMatch(combo+".hold", codes)
-					executeShortcut(holdShortcut, cfg, virtual, heldModifiers)
+					executeShortcutWithState(holdShortcut, cfg, virtual, heldModifiers, state)
 				}
 			} else {
 				state.mu.Unlock()
@@ -715,7 +814,7 @@ func fireTapIfPending(combo string, state *LoopState, cfg *config.Config, codes 
 
 	if normalShortcut != nil {
 		LogMatch(combo, codes)
-		executeShortcut(normalShortcut, cfg, virtual, heldModifiers)
+		executeShortcutWithState(normalShortcut, cfg, virtual, heldModifiers, state)
 	}
 	return true
 }
@@ -749,7 +848,7 @@ func startTwhPrimingTimer(combo string, shortcut *config.ParsedShortcut, cfg *co
 }
 
 // startTwhHoldTimer starts timer2: the hold threshold on the second press.
-// On timeout (still held), starts the whileheld process.
+// On timeout (still held), starts the hold process or fires longpress once.
 func startTwhHoldTimer(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, state *LoopState, codes string, virtual *evdev.InputDevice, heldModifiers matcher.ModifierState) {
 	interval := shortcut.HoldInterval
 	if interval == 0 {
@@ -771,8 +870,17 @@ func startTwhHoldTimer(combo string, shortcut *config.ParsedShortcut, cfg *confi
 				state.twhPhase[combo] = twhActive
 				delete(state.twhCancel, combo)
 				state.mu.Unlock()
-				LogMatch(combo+".tapwhileheld", codes)
-				startHeldProcess(combo, shortcut, cfg, state, virtual, heldModifiers)
+				if shortcut.Behavior == config.BehaviorTapLongPress {
+					LogMatch(combo+".taplongpress", codes)
+					resolvedCmd := cfg.ResolveCommand(shortcut.Commands[1])
+					LogTrigger(resolvedCmd)
+					Execute(resolvedCmd, cfg)
+				} else {
+					LogMatch(combo+".taphold", codes)
+					resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
+					LogTrigger(resolvedCmd)
+					Execute(resolvedCmd, cfg)
+				}
 			} else {
 				state.mu.Unlock()
 			}

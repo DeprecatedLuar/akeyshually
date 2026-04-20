@@ -7,12 +7,14 @@ import (
 	"strings"
 )
 
+const enabledStateFile = ".enabled"
+
 func GetEnabledStatePath() (string, error) {
 	configDir, err := GetConfigDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(configDir, ".enabled"), nil
+	return filepath.Join(configDir, enabledStateFile), nil
 }
 
 func ReadEnabledState() ([]string, error) {
@@ -67,7 +69,7 @@ func WriteEnabledState(files []string) error {
 	}
 
 	tmpPath := enabledPath + ".tmp"
-	if err := os.WriteFile(tmpPath, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(tmpPath, []byte(content), configFilePerm); err != nil {
 		return err
 	}
 

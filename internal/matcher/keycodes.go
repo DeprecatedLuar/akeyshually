@@ -49,6 +49,9 @@ var keyCodeMap = map[string]uint16{
 	"playpause":     evdev.KEY_PLAYPAUSE, "play": evdev.KEY_PLAYPAUSE,
 	"nextsong":      evdev.KEY_NEXTSONG, "next": evdev.KEY_NEXTSONG,
 	"previoussong":  evdev.KEY_PREVIOUSSONG, "previous": evdev.KEY_PREVIOUSSONG,
+	"playcd":        evdev.KEY_PLAYCD, "pausecd": evdev.KEY_PAUSECD,
+	"stopcd":        evdev.KEY_STOPCD,
+	"ejectcd":       evdev.KEY_EJECTCD, "closecd": evdev.KEY_CLOSECD, "ejectclosecd": evdev.KEY_EJECTCLOSECD,
 	"calc":          evdev.KEY_CALC, "calculator": evdev.KEY_CALC,
 	// Modifier keys
 	"super": evdev.KEY_LEFTMETA, "ctrl": evdev.KEY_LEFTCTRL,
@@ -110,6 +113,12 @@ func init() {
 		evdev.KEY_PLAYPAUSE:    "playpause",
 		evdev.KEY_NEXTSONG:     "nextsong",
 		evdev.KEY_PREVIOUSSONG: "previoussong",
+		evdev.KEY_PLAYCD:       "playcd",
+		evdev.KEY_PAUSECD:      "pausecd",
+		evdev.KEY_STOPCD:       "stopcd",
+		evdev.KEY_EJECTCD:      "ejectcd",
+		evdev.KEY_CLOSECD:      "closecd",
+		evdev.KEY_EJECTCLOSECD: "ejectclosecd",
 		evdev.KEY_CALC:         "calc",
 		// Gamepad/tablet canonical names
 		evdev.BTN_0: "btn_0", evdev.BTN_1: "btn_1", evdev.BTN_2: "btn_2", evdev.BTN_3: "btn_3",
