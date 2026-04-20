@@ -116,3 +116,173 @@ func TestPressReleaseSingleCommandRejected(t *testing.T) {
 		t.Fatal("expected error for single command, got nil")
 	}
 }
+
+func TestHoldBehavior(t *testing.T) {
+	ps, err := ParseShortcut("super+h.hold", "mute")
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if ps.Behavior != BehaviorHold {
+		t.Errorf("Behavior = %v, want BehaviorHold", ps.Behavior)
+	}
+}
+
+func TestLongPressBehavior(t *testing.T) {
+	ps, err := ParseShortcut("super+h.longpress(200)", "shutdown")
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if ps.Behavior != BehaviorLongPress {
+		t.Errorf("Behavior = %v, want BehaviorLongPress", ps.Behavior)
+	}
+	if ps.Interval != 200 {
+		t.Errorf("Interval = %v, want 200", ps.Interval)
+	}
+}
+
+func TestHoldRepeat(t *testing.T) {
+	ps, err := ParseShortcut("super+h.hold.repeat", "scroll")
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if ps.Behavior != BehaviorHold {
+		t.Errorf("Behavior = %v, want BehaviorHold", ps.Behavior)
+	}
+	if !ps.Repeat {
+		t.Errorf("Repeat = false, want true")
+	}
+}
+
+func TestOnPressRepeat(t *testing.T) {
+	ps, err := ParseShortcut("super+r.onpress.repeat", "scroll")
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if ps.Behavior != BehaviorNormal {
+		t.Errorf("Behavior = %v, want BehaviorNormal", ps.Behavior)
+	}
+	if ps.Timing != TimingPress {
+		t.Errorf("Timing = %v, want TimingPress", ps.Timing)
+	}
+	if !ps.Repeat {
+		t.Errorf("Repeat = false, want true")
+	}
+}
+
+func TestTapHoldBehavior(t *testing.T) {
+	ps, err := ParseShortcut("super+t.taphold", "hold-cmd")
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if ps.Behavior != BehaviorTapHold {
+		t.Errorf("Behavior = %v, want BehaviorTapHold", ps.Behavior)
+	}
+	if len(ps.Commands) != 1 {
+		t.Errorf("Commands len = %d, want 1", len(ps.Commands))
+	}
+}
+
+func TestTapLongPressBehavior(t *testing.T) {
+	ps, err := ParseShortcut("super+t.taplongpress", []interface{}{"tap-cmd", "longpress-cmd"})
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if ps.Behavior != BehaviorTapLongPress {
+		t.Errorf("Behavior = %v, want BehaviorTapLongPress", ps.Behavior)
+	}
+	if len(ps.Commands) != 2 {
+		t.Errorf("Commands len = %d, want 2", len(ps.Commands))
+	}
+}
+
+func TestDoubleTapSwitchParsing(t *testing.T) {
+	ps, err := ParseShortcut("f1.doubletap", "notify")
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if ps.Behavior != BehaviorDoubleTap {
+		t.Errorf("Behavior = %v, want BehaviorDoubleTap", ps.Behavior)
+	}
+}
+
+func TestLongPressRepeatRejected(t *testing.T) {
+	_, err := ParseShortcut("super+h.longpress.repeat", "cmd")
+	if err == nil {
+		t.Fatal("expected error for longpress.repeat, got nil")
+	}
+}
+
+func TestMigrationErrorWhileheld(t *testing.T) {
+	_, err := ParseShortcut("super+h.whileheld", "cmd")
+	if err == nil || err.Error() != "whileheld removed: use .hold" {
+		t.Errorf("expected migration error, got: %v", err)
+	}
+}
+
+func TestMigrationErrorRepeatWhileheld(t *testing.T) {
+	_, err := ParseShortcut("super+h.repeat-whileheld", "cmd")
+	if err == nil || err.Error() != "repeat-whileheld removed: use .hold.repeat" {
+		t.Errorf("expected migration error, got: %v", err)
+	}
+}
+
+func TestMigrationErrorRepeatToggle(t *testing.T) {
+	_, err := ParseShortcut("super+r.repeat-toggle", "cmd")
+	if err == nil || err.Error() != "repeat-toggle removed: use .onpress.repeat" {
+		t.Errorf("expected migration error, got: %v", err)
+	}
+}
+
+func TestMigrationErrorToggle(t *testing.T) {
+	_, err := ParseShortcut("super+r.toggle", "cmd")
+	if err == nil || err.Error() != "toggle removed: use .onpress.repeat" {
+		t.Errorf("expected migration error, got: %v", err)
+	}
+}
+
+func TestMigrationErrorTapwhileheld(t *testing.T) {
+	_, err := ParseShortcut("super+t.tapwhileheld", []interface{}{"tap", "hold"})
+	if err == nil || err.Error() != "tapwhileheld removed: use .taphold" {
+		t.Errorf("expected migration error, got: %v", err)
+	}
+}
+
+func TestRemapTap(t *testing.T) {
+	ps, err := ParseShortcut("btn_0", ">ctrl+z")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ps.IsRemap || ps.RemapMode != RemapTap || ps.RemapCombo != "ctrl+z" {
+		t.Errorf("got IsRemap=%v RemapMode=%d RemapCombo=%q, want true/%d/ctrl+z", ps.IsRemap, ps.RemapMode, ps.RemapCombo, RemapTap)
+	}
+}
+
+func TestRemapHoldForever(t *testing.T) {
+	ps, err := ParseShortcut("btn_0", ">>b")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ps.IsRemap || ps.RemapMode != RemapHoldForever || ps.RemapCombo != "b" {
+		t.Errorf("got IsRemap=%v RemapMode=%d RemapCombo=%q, want true/%d/b", ps.IsRemap, ps.RemapMode, ps.RemapCombo, RemapHoldForever)
+	}
+}
+
+func TestRemapKeyUp(t *testing.T) {
+	ps, err := ParseShortcut("btn_1", "<k")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ps.IsRemap || ps.RemapMode != RemapKeyUp || ps.RemapCombo != "k" {
+		t.Errorf("got IsRemap=%v RemapMode=%d RemapCombo=%q, want true/%d/k", ps.IsRemap, ps.RemapMode, ps.RemapCombo, RemapKeyUp)
+	}
+}
+
+func TestRemapReleaseAll(t *testing.T) {
+	ps, err := ParseShortcut("btn_2", "<<")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ps.IsRemap || ps.RemapMode != RemapReleaseAll || ps.RemapCombo != "" {
+		t.Errorf("got IsRemap=%v RemapMode=%d RemapCombo=%q, want true/%d/empty", ps.IsRemap, ps.RemapMode, ps.RemapCombo, RemapReleaseAll)
+	}
+}

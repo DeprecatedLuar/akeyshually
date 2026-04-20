@@ -11,6 +11,11 @@ import (
 	"github.com/deprecatedluar/akeyshually/internal/config"
 )
 
+const (
+	cdPrefix      = "cd &&"
+	fallbackShell = "sh"
+)
+
 func Execute(command string, cfg *config.Config) {
 	ExecuteTracked(command, cfg)
 }
@@ -22,11 +27,11 @@ func ExecuteTracked(command string, cfg *config.Config) *exec.Cmd {
 	if shell == "" {
 		shell = os.Getenv("SHELL")
 		if shell == "" {
-			shell = "sh"
+			shell = fallbackShell
 		}
 	}
 
-	fullCommand := "cd &&" + command
+	fullCommand := cdPrefix + command
 
 	if cfg.Settings.EnvFile != "" {
 		envFile := expandHome(cfg.Settings.EnvFile)
