@@ -44,13 +44,14 @@ type BehaviorMode int
 
 const (
 	BehaviorNormal BehaviorMode = iota
-	BehaviorHold                // sustained while key held; command fires on press, remap mirrors lifecycle
+	BehaviorHold                // sustained while key held; 1 command
 	BehaviorLongPress           // fires once after threshold, done
 	BehaviorSwitch
 	BehaviorDoubleTap
-	BehaviorPressRelease
-	BehaviorTapHold     // tap fires Commands[0], tap-then-hold sustains Commands[1]
-	BehaviorTapLongPress // tap fires Commands[0], tap-then-longpress fires Commands[1] once
+	BehaviorPressRelease        // Commands[0] on press (can be ""), Commands[1] on release
+	BehaviorHoldRelease         // Commands[0] at hold threshold (can be ""), Commands[1] on release after threshold
+	BehaviorTapHold             // tap fires Commands[0], tap-then-hold sustains Commands[1]
+	BehaviorTapLongPress        // tap fires Commands[0], tap-then-longpress fires Commands[1] once
 )
 
 type TimingMode int
@@ -397,7 +398,7 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 	}
 
 	// Parse modifiers (behavior and timing)
-	intervalRegex := regexp.MustCompile(`^(hold|longpress|doubletap)\((\d+\.?\d*|\d*\.\d+)\)$`)
+	intervalRegex := regexp.MustCompile(`^(hold|longpress|doubletap|holdrelease)\((\d+\.?\d*|\d*\.\d+)\)$`)
 	tapHoldRegex := regexp.MustCompile(`^tap(?:\((\d+\.?\d*|\d*\.\d+)\))?hold(?:\((\d+\.?\d*|\d*\.\d+)\))?$`)
 	tapLongPressRegex := regexp.MustCompile(`^tap(?:\((\d+\.?\d*|\d*\.\d+)\))?longpress(?:\((\d+\.?\d*|\d*\.\d+)\))?$`)
 
@@ -444,6 +445,8 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 				shortcut.Behavior = BehaviorLongPress
 			case "doubletap":
 				shortcut.Behavior = BehaviorDoubleTap
+			case "holdrelease":
+				shortcut.Behavior = BehaviorHoldRelease
 			}
 			shortcut.Interval = normalizeInterval(interval)
 			continue
@@ -453,6 +456,8 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 		switch part {
 		case "hold":
 			shortcut.Behavior = BehaviorHold
+		case "holdrelease":
+			shortcut.Behavior = BehaviorHoldRelease
 		case "longpress":
 			shortcut.Behavior = BehaviorLongPress
 		case "repeat":
@@ -464,7 +469,7 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 		case "pressrelease":
 			shortcut.Behavior = BehaviorPressRelease
 		case "onrelease":
-			shortcut.Timing = TimingRelease
+			return nil, fmt.Errorf("onrelease removed: use .pressrelease = [\"\", \"cmd\"]")
 		case "onpress":
 			shortcut.Timing = TimingPress
 		case "passthrough":
@@ -499,6 +504,10 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 		if len(shortcut.Commands) != 2 {
 			return nil, fmt.Errorf("pressrelease behavior requires exactly 2 commands")
 		}
+	case BehaviorHoldRelease:
+		if len(shortcut.Commands) != 2 {
+			return nil, fmt.Errorf("holdrelease behavior requires exactly 2 commands")
+		}
 	case BehaviorTapHold:
 		if len(shortcut.Commands) != 1 {
 			return nil, fmt.Errorf("taphold behavior requires exactly 1 command")
@@ -508,8 +517,8 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 			return nil, fmt.Errorf("taplongpress behavior requires exactly 2 commands")
 		}
 	case BehaviorHold:
-		if len(shortcut.Commands) != 1 && len(shortcut.Commands) != 2 {
-			return nil, fmt.Errorf("hold behavior requires 1 command or array of 2 commands")
+		if len(shortcut.Commands) != 1 {
+			return nil, fmt.Errorf("hold behavior requires 1 command; for press+release use .holdrelease")
 		}
 	default:
 		if len(shortcut.Commands) != 1 {
@@ -534,6 +543,8 @@ func behaviorName(b BehaviorMode) string {
 		return "doubletap"
 	case BehaviorPressRelease:
 		return "pressrelease"
+	case BehaviorHoldRelease:
+		return "holdrelease"
 	case BehaviorTapHold:
 		return "taphold"
 	case BehaviorTapLongPress:
