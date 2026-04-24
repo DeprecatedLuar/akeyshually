@@ -258,6 +258,23 @@ func (m *Matcher) GetDoubleTapShortcut(code uint16) *config.ParsedShortcut {
 	return m.doubleTapShortcuts[code]
 }
 
+// GetShortcuts returns all shortcuts for a combo (including passthrough matches).
+func (m *Matcher) GetShortcuts(combo string) []*config.ParsedShortcut {
+	var result []*config.ParsedShortcut
+	for key, s := range m.shortcuts {
+		if key.Combo == combo {
+			result = append(result, s)
+		}
+	}
+	baseKey := extractBaseKey(combo)
+	for key, s := range m.passthroughShortcuts {
+		if key.Combo == baseKey {
+			result = append(result, s)
+		}
+	}
+	return result
+}
+
 // CheckShortcut checks if a shortcut exists with given combo, behavior, and timing
 func (m *Matcher) CheckShortcut(combo string, behavior config.BehaviorMode, timing config.TimingMode) *config.ParsedShortcut {
 	key := ShortcutKey{

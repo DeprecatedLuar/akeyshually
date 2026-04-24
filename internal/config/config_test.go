@@ -127,6 +127,63 @@ func TestHoldBehavior(t *testing.T) {
 	}
 }
 
+func TestHoldTwoCommandsRejected(t *testing.T) {
+	_, err := ParseShortcut("super+h.hold", []interface{}{"start", "stop"})
+	if err == nil {
+		t.Fatal("expected error for 2-command hold, got nil")
+	}
+}
+
+func TestHoldReleaseBehavior(t *testing.T) {
+	ps, err := ParseShortcut("super+h.holdrelease", []interface{}{"mic-on", "mic-off"})
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if ps.Behavior != BehaviorHoldRelease {
+		t.Errorf("Behavior = %v, want BehaviorHoldRelease", ps.Behavior)
+	}
+	if len(ps.Commands) != 2 {
+		t.Errorf("Commands len = %d, want 2", len(ps.Commands))
+	}
+}
+
+func TestHoldReleaseEmptyFirstCommand(t *testing.T) {
+	ps, err := ParseShortcut("super+h.holdrelease", []interface{}{"", "mic-off"})
+	if err != nil {
+		t.Fatalf("expected success with empty first command, got: %v", err)
+	}
+	if ps.Commands[0] != "" {
+		t.Errorf("Commands[0] = %q, want empty string", ps.Commands[0])
+	}
+}
+
+func TestHoldReleaseWithInterval(t *testing.T) {
+	ps, err := ParseShortcut("super+h.holdrelease(500)", []interface{}{"start", "stop"})
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if ps.Interval != 500 {
+		t.Errorf("Interval = %v, want 500", ps.Interval)
+	}
+}
+
+func TestMigrationErrorOnrelease(t *testing.T) {
+	_, err := ParseShortcut("super.onrelease", "rofi")
+	if err == nil || err.Error() != "onrelease removed: use .pressrelease = [\"\", \"cmd\"]" {
+		t.Errorf("expected migration error, got: %v", err)
+	}
+}
+
+func TestPressReleaseEmptyFirstCommand(t *testing.T) {
+	ps, err := ParseShortcut("super.pressrelease", []interface{}{"", "rofi"})
+	if err != nil {
+		t.Fatalf("expected success with empty first command, got: %v", err)
+	}
+	if ps.Commands[0] != "" || ps.Commands[1] != "rofi" {
+		t.Errorf("Commands = %v, want [\"\", \"rofi\"]", ps.Commands)
+	}
+}
+
 func TestLongPressBehavior(t *testing.T) {
 	ps, err := ParseShortcut("super+h.longpress(200)", "shutdown")
 	if err != nil {
