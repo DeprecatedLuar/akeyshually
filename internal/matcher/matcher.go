@@ -1,11 +1,9 @@
 package matcher
 
 import (
-	"context"
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/deprecatedluar/akeyshually/internal/config"
 
@@ -58,73 +56,6 @@ func (ts *TapState) Check(code uint16) bool {
 	return ts.candidate == code
 }
 
-// DoubleTapState tracks pending double-tap timers
-type DoubleTapState struct {
-	sync.Mutex
-	pendingKey  uint16             // Which key is waiting for second tap (0 = none)
-	timerCancel context.CancelFunc // Cancel function for timeout goroutine
-}
-
-// NewDoubleTapState creates a new double-tap state
-func NewDoubleTapState() *DoubleTapState {
-	return &DoubleTapState{}
-}
-
-// StartTimer starts waiting for a second tap
-func (ds *DoubleTapState) StartTimer(code uint16, interval float64, onTimeout func()) {
-	ds.Lock()
-	defer ds.Unlock()
-
-	// Cancel existing timer if any
-	if ds.timerCancel != nil {
-		ds.timerCancel()
-	}
-
-	ds.pendingKey = code
-
-	ctx, cancel := context.WithCancel(context.Background())
-	ds.timerCancel = cancel
-
-	go func() {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(time.Duration(interval) * time.Millisecond):
-			if onTimeout != nil {
-				onTimeout()
-			}
-			ds.Lock()
-			ds.pendingKey = 0
-			ds.timerCancel = nil
-			ds.Unlock()
-		}
-	}()
-}
-
-// CheckSecondTap checks if this is a valid second tap
-func (ds *DoubleTapState) CheckSecondTap(code uint16) bool {
-	ds.Lock()
-	defer ds.Unlock()
-	return ds.pendingKey == code
-}
-
-// CancelTimer cancels the pending timer and clears state
-func (ds *DoubleTapState) CancelTimer() {
-	ds.Lock()
-	defer ds.Unlock()
-
-	if ds.timerCancel != nil {
-		ds.timerCancel()
-		ds.timerCancel = nil
-	}
-	ds.pendingKey = 0
-}
-
-// Clear clears the state (for mouse clicks)
-func (ds *DoubleTapState) Clear() {
-	ds.CancelTimer()
-}
-
 type Matcher struct {
 	state     ModifierState
 	shortcuts map[ShortcutKey]*config.ParsedShortcut
@@ -136,21 +67,11 @@ type Matcher struct {
 	switchState map[string]int // "super+k.switch.press" -> next index
 	switchMutex sync.Mutex
 
-	// Toggle state (loop on/off)
-	toggleState map[string]context.CancelFunc // "super+k.toggle.press" -> cancel func
-	toggleMutex sync.Mutex
-
 	// Tap shortcuts (lone modifiers with .onrelease)
 	tapShortcuts map[uint16]string
 
-	// Double-tap shortcuts (lone modifiers with .doubletap)
-	doubleTapShortcuts map[uint16]*config.ParsedShortcut
-
 	// Shared tap state (for mouse cancellation)
 	tapState *TapState
-
-	// Shared double-tap state
-	doubleTapState *DoubleTapState
 
 	// Reusable string builder (avoids allocations in hot path)
 	comboBuilder strings.Builder
@@ -160,7 +81,6 @@ func New(parsedShortcuts map[string][]*config.ParsedShortcut) *Matcher {
 	shortcuts := make(map[ShortcutKey]*config.ParsedShortcut)
 	passthroughShortcuts := make(map[ShortcutKey]*config.ParsedShortcut)
 	tapShortcuts := make(map[uint16]string)
-	doubleTapShortcuts := make(map[uint16]*config.ParsedShortcut)
 
 	for _, shortcutList := range parsedShortcuts {
 		for _, shortcut := range shortcutList {
@@ -194,29 +114,6 @@ func New(parsedShortcuts map[string][]*config.ParsedShortcut) *Matcher {
 					tapShortcuts[evdev.KEY_RIGHTSHIFT] = shortcut.Commands[0]
 				}
 			}
-
-			// Check for double-tap shortcuts (any key with .doubletap)
-			if shortcut.Behavior == config.BehaviorDoubleTap {
-				normalized := strings.ToLower(shortcut.KeyCombo)
-				switch normalized {
-				case "super":
-					doubleTapShortcuts[evdev.KEY_LEFTMETA] = shortcut
-					doubleTapShortcuts[evdev.KEY_RIGHTMETA] = shortcut
-				case "ctrl":
-					doubleTapShortcuts[evdev.KEY_LEFTCTRL] = shortcut
-					doubleTapShortcuts[evdev.KEY_RIGHTCTRL] = shortcut
-				case "alt":
-					doubleTapShortcuts[evdev.KEY_LEFTALT] = shortcut
-					doubleTapShortcuts[evdev.KEY_RIGHTALT] = shortcut
-				case "shift":
-					doubleTapShortcuts[evdev.KEY_LEFTSHIFT] = shortcut
-					doubleTapShortcuts[evdev.KEY_RIGHTSHIFT] = shortcut
-				default:
-					if keyCode := getKeyCode(normalized); keyCode != 0 {
-						doubleTapShortcuts[keyCode] = shortcut
-					}
-				}
-			}
 		}
 	}
 
@@ -224,38 +121,14 @@ func New(parsedShortcuts map[string][]*config.ParsedShortcut) *Matcher {
 		shortcuts:            shortcuts,
 		passthroughShortcuts: passthroughShortcuts,
 		switchState:          make(map[string]int),
-		toggleState:          make(map[string]context.CancelFunc),
 		tapShortcuts:         tapShortcuts,
-		doubleTapShortcuts:   doubleTapShortcuts,
 		tapState:             nil, // Set via SetTapState() if needed
-		doubleTapState:       nil, // Set via SetDoubleTapState() if needed
 	}
 }
 
 // SetTapState sets the shared tap state (call after New if tap shortcuts exist)
 func (m *Matcher) SetTapState(ts *TapState) {
 	m.tapState = ts
-}
-
-// SetDoubleTapState sets the shared double-tap state
-func (m *Matcher) SetDoubleTapState(ds *DoubleTapState) {
-	m.doubleTapState = ds
-}
-
-// GetDoubleTapState returns the double-tap state
-func (m *Matcher) GetDoubleTapState() *DoubleTapState {
-	return m.doubleTapState
-}
-
-// HasDoubleTapShortcut checks if this modifier has a double-tap shortcut
-func (m *Matcher) HasDoubleTapShortcut(code uint16) bool {
-	_, exists := m.doubleTapShortcuts[code]
-	return exists
-}
-
-// GetDoubleTapShortcut returns the double-tap shortcut for this modifier
-func (m *Matcher) GetDoubleTapShortcut(code uint16) *config.ParsedShortcut {
-	return m.doubleTapShortcuts[code]
 }
 
 // GetShortcuts returns all shortcuts for a combo (including passthrough matches).
@@ -275,31 +148,6 @@ func (m *Matcher) GetShortcuts(combo string) []*config.ParsedShortcut {
 	return result
 }
 
-// CheckShortcut checks if a shortcut exists with given combo, behavior, and timing
-func (m *Matcher) CheckShortcut(combo string, behavior config.BehaviorMode, timing config.TimingMode) *config.ParsedShortcut {
-	key := ShortcutKey{
-		Combo:    combo,
-		Behavior: behavior,
-		Timing:   timing,
-	}
-	if shortcut := m.shortcuts[key]; shortcut != nil {
-		return shortcut
-	}
-
-	// Check passthrough shortcuts (strip modifiers, match base key only)
-	baseKey := extractBaseKey(combo)
-	passthroughKey := ShortcutKey{
-		Combo:    baseKey,
-		Behavior: behavior,
-		Timing:   timing,
-	}
-	if shortcut := m.passthroughShortcuts[passthroughKey]; shortcut != nil {
-		return shortcut
-	}
-
-	return nil
-}
-
 // extractBaseKey returns the last component of a combo (the non-modifier key)
 // Example: "shift+ctrl+kp6" -> "kp6"
 func extractBaseKey(combo string) string {
@@ -308,24 +156,6 @@ func extractBaseKey(combo string) string {
 		return combo
 	}
 	return parts[len(parts)-1]
-}
-
-// HasReleaseShortcut checks if any release shortcuts exist for a combo
-func (m *Matcher) HasReleaseShortcut(combo string) bool {
-	for key := range m.shortcuts {
-		if key.Combo == combo && key.Timing == config.TimingRelease {
-			return true
-		}
-	}
-
-	baseKey := extractBaseKey(combo)
-	for key := range m.passthroughShortcuts {
-		if key.Combo == baseKey && key.Timing == config.TimingRelease {
-			return true
-		}
-	}
-
-	return false
 }
 
 // GetCurrentCombo builds the current key combo string
@@ -465,33 +295,6 @@ func (m *Matcher) GetNextSwitchCommand(key string, commands []string) string {
 	command := commands[idx]
 	m.switchState[key] = (idx + 1) % len(commands)
 	return command
-}
-
-// StartToggleLoop starts a toggle loop
-func (m *Matcher) StartToggleLoop(key string, cancel context.CancelFunc) {
-	m.toggleMutex.Lock()
-	defer m.toggleMutex.Unlock()
-	m.toggleState[key] = cancel
-}
-
-// StopToggleLoop stops a toggle loop and returns the cancel function
-func (m *Matcher) StopToggleLoop(key string) context.CancelFunc {
-	m.toggleMutex.Lock()
-	defer m.toggleMutex.Unlock()
-
-	if cancel, exists := m.toggleState[key]; exists {
-		delete(m.toggleState, key)
-		return cancel
-	}
-	return nil
-}
-
-// IsToggleActive checks if a toggle loop is active
-func (m *Matcher) IsToggleActive(key string) bool {
-	m.toggleMutex.Lock()
-	defer m.toggleMutex.Unlock()
-	_, exists := m.toggleState[key]
-	return exists
 }
 
 // IsModifierKey returns true if the key code is a modifier key

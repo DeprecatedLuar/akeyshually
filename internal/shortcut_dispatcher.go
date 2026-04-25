@@ -66,21 +66,58 @@ func handlePress(code uint16, m *matcher.Matcher, cfg *config.Config, loopState 
 	LogKey(matcher.GetKeyName(code), code)
 	m.ClearTapCandidate()
 
+	var combo string
+	var shortcuts []*config.ParsedShortcut
+
 	if matcher.IsModifierKey(code) {
 		modifiers := m.GetCurrentModifiers()
 		if !modifiers.Super && !modifiers.Ctrl && !modifiers.Alt && !modifiers.Shift {
 			m.MarkTapCandidate(code)
 		}
 		m.UpdateModifierState(code, true)
-		return false
-	}
 
-	combo := m.GetCurrentCombo(code)
-	m.UpdateModifierState(code, true)
-	shortcuts := m.GetShortcuts(combo)
+		// Check for lone modifier shortcuts (super.doubletap, super.pressrelease, etc.)
+		combo = matcher.GetKeyName(code) // "super", "ctrl", "alt", or "shift"
+		shortcuts = m.GetShortcuts(combo)
+		if len(shortcuts) == 0 {
+			return false // No shortcuts, behave as normal modifier
+		}
+		// Fall through to ladder logic below
+	} else {
+		combo = m.GetCurrentCombo(code)
+		m.UpdateModifierState(code, true)
+		shortcuts = m.GetShortcuts(combo)
 
-	if len(shortcuts) == 0 {
-		return false
+		if len(shortcuts) == 0 {
+			return false
+		}
+
+		// Cancel any active modifier ladders (prevents super.doubletap from firing when super+t is pressed)
+		modifiers := m.GetCurrentModifiers()
+		if modifiers.Super {
+			if state := stateMap.Get("super"); state != nil {
+				state.Cancel()
+				stateMap.Delete("super")
+			}
+		}
+		if modifiers.Ctrl {
+			if state := stateMap.Get("ctrl"); state != nil {
+				state.Cancel()
+				stateMap.Delete("ctrl")
+			}
+		}
+		if modifiers.Alt {
+			if state := stateMap.Get("alt"); state != nil {
+				state.Cancel()
+				stateMap.Delete("alt")
+			}
+		}
+		if modifiers.Shift {
+			if state := stateMap.Get("shift"); state != nil {
+				state.Cancel()
+				stateMap.Delete("shift")
+			}
+		}
 	}
 
 	// Forward second press to a goroutine waiting in the doubletap window
@@ -126,6 +163,13 @@ func handleRelease(code uint16, m *matcher.Matcher, cfg *config.Config, loopStat
 			Execute(resolvedCmd, cfg)
 		}
 		m.UpdateModifierState(code, false)
+
+		// Signal release to active ladder if one exists
+		combo := matcher.GetKeyName(code)
+		if state := stateMap.Get(combo); state != nil {
+			state.SignalRelease()
+		}
+
 		return false
 	}
 
@@ -306,7 +350,7 @@ func pruneCandidates(candidates []timers.Candidate, count int, pressed bool, pha
 			continue
 		}
 
-		if count < c.Condition.Count && phase >= c.Condition.Phase {
+		if count < c.Condition.Count && phase > c.Condition.Phase {
 			// Not enough presses and we're past the phase boundary
 			continue
 		}
@@ -614,22 +658,6 @@ func stopHeldProcess(combo string, state *LoopState, virtual *evdev.InputDevice)
 			delete(state.heldProcesses, storedCombo)
 			return
 		}
-	}
-}
-
-func toggleLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, m *matcher.Matcher, _ *LoopState) {
-	if m.IsToggleActive(combo) {
-		if cancel := m.StopToggleLoop(combo); cancel != nil {
-			cancel()
-		}
-	} else {
-		interval := intervalOrDefault(shortcut.Interval, cfg.Settings.DefaultInterval)
-		ctx, cancel := context.WithCancel(context.Background())
-		m.StartToggleLoop(combo, cancel)
-
-		resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
-		LogTrigger(resolvedCmd)
-		go runTickerLoop(ctx, interval, func() { Execute(resolvedCmd, cfg) })
 	}
 }
 
