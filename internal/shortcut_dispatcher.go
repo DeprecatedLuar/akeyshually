@@ -15,12 +15,13 @@ import (
 	evdev "github.com/holoplot/go-evdev"
 )
 
+// LoopState tracks active repeat loops and sustained processes across key events.
 type LoopState struct {
 	mu             sync.Mutex
-	active         map[string]context.CancelFunc // repeat loops: combo -> cancel
-	heldProcesses  map[string]*exec.Cmd          // hold remap: combo -> process
-	heldKeys       map[string][]uint16           // hold remap: combo -> key codes held down
-	persistentHeld map[string][]uint16           // >>: key name -> held key codes
+	active         map[string]context.CancelFunc // repeat loops
+	heldProcesses  map[string]*exec.Cmd          // sustained whileheld processes
+	heldKeys       map[string][]uint16           // sustained remap hold keys
+	persistentHeld map[string][]uint16           // >> persistent remap keys
 }
 
 func NewLoopState() *LoopState {
@@ -47,7 +48,6 @@ func runTickerLoop(ctx context.Context, interval float64, fn func()) {
 
 func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *LoopState, virtual *evdev.InputDevice) KeyHandler {
 	stateMap := timers.NewStateMap()
-
 	return func(code uint16, value int32) bool {
 		if cfg.Settings.DisableMediaKeys && IsMediaKey(code) {
 			return false
@@ -83,21 +83,15 @@ func handlePress(code uint16, m *matcher.Matcher, cfg *config.Config, loopState 
 		return false
 	}
 
-	// If a doubletap window is open, signal second press
+	// Forward second press to a goroutine waiting in the doubletap window
 	if existing := stateMap.Get(combo); existing != nil {
-		existing.Lock()
-		phase := existing.Phase
-		existing.Unlock()
-		if phase == timers.PhaseDoubleTapWindow {
-			existing.SignalPress()
-			return true
-		}
-		existing.Cancel()
-		stateMap.Delete(combo)
+		existing.SignalPress()
+		return true
 	}
 
-	// Switch fires immediately (modifier behavior, not a chain link)
 	suppress := false
+
+	// Switch always fires immediately, independent of any chain
 	for _, s := range shortcuts {
 		if s.Behavior == config.BehaviorSwitch {
 			LogMatch(combo+".switch", m.GetComboCodes(code))
@@ -106,44 +100,20 @@ func handlePress(code uint16, m *matcher.Matcher, cfg *config.Config, loopState 
 		}
 	}
 
-	// PressRelease Commands[0] fires immediately, independent of chain
-	for _, s := range shortcuts {
-		if s.Behavior == config.BehaviorPressRelease {
-			LogMatch(combo+".pressrelease", m.GetComboCodes(code))
-			if s.Commands[0] != "" {
-				resolvedCmd := cfg.ResolveCommand(s.Commands[0])
-				LogTrigger(resolvedCmd)
-				Execute(resolvedCmd, cfg)
-			}
-			suppress = true
-		}
-	}
+	// Build candidates for timer ladder
+	candidates := timers.BuildCandidates(shortcuts)
 
-	// If no chain behaviors, handle onpress immediately
-	if !hasChainBehaviors(shortcuts) {
-		for _, s := range shortcuts {
-			if s.Behavior == config.BehaviorNormal {
-				if s.Repeat {
-					LogMatch(combo+".repeat", m.GetComboCodes(code))
-					toggleLoop(combo, s, cfg, m, loopState)
-				} else {
-					LogMatch(combo, m.GetComboCodes(code))
-					executeShortcutWithState(s, cfg, virtual, m.GetCurrentModifiers(), loopState)
-				}
-				suppress = true
-			}
-		}
+	// No candidates means only switch/eager behaviors (already handled above)
+	if len(candidates) == 0 {
 		return suppress
 	}
 
-	// Start chain goroutine
+	// Launch timer ladder resolution goroutine
 	modifiers := m.GetCurrentModifiers()
 	ctx, cancel := context.WithCancel(context.Background())
 	state := timers.NewComboState(cancel)
 	stateMap.Set(combo, state)
-
-	go runSequence(ctx, state, combo, shortcuts, cfg, loopState, virtual, modifiers, stateMap)
-
+	go runLadder(ctx, state, combo, candidates, cfg, loopState, virtual, modifiers, stateMap)
 	return true
 }
 
@@ -160,146 +130,245 @@ func handleRelease(code uint16, m *matcher.Matcher, cfg *config.Config, loopStat
 	}
 
 	combo := m.GetCurrentCombo(code)
-	shortcuts := m.GetShortcuts(combo)
 
-	state := stateMap.Get(combo)
-	if state != nil {
+	// Signal release to active goroutine if one exists
+	if state := stateMap.Get(combo); state != nil {
 		state.SignalRelease()
 		return true
 	}
 
-	// No active chain — fire pressrelease Commands[1] if no chain behaviors defined
-	// (when chain behaviors exist, the goroutine fires it at resolution)
-	if !hasChainBehaviors(shortcuts) {
-		for _, s := range shortcuts {
-			if s.Behavior == config.BehaviorPressRelease && s.Commands[1] != "" {
-				resolvedCmd := cfg.ResolveCommand(s.Commands[1])
-				LogMatch(combo+".pressrelease.release", m.GetComboCodes(code))
-				LogTrigger(resolvedCmd)
-				Execute(resolvedCmd, cfg)
-			}
-		}
-	}
-
+	// No active goroutine - stop any sustained processes
 	stopLoop(combo, loopState)
 	stopHeldProcess(combo, loopState, virtual)
 	return false
 }
 
-// runSequence is the chain goroutine: one per press, walks hold→doubletap→taphold links.
-func runSequence(ctx context.Context, state *timers.ComboState, combo string, shortcuts []*config.ParsedShortcut, cfg *config.Config, loopState *LoopState, virtual *evdev.InputDevice, modifiers matcher.ModifierState, stateMap *timers.StateMap) {
+// runLadder is the timer ladder goroutine. Evaluates candidates against win conditions.
+// State-driven: tracks count (presses), pressed (held), and steps through timer thresholds.
+func runLadder(
+	ctx context.Context,
+	state *timers.ComboState,
+	combo string,
+	candidates []timers.Candidate,
+	cfg *config.Config,
+	loopState *LoopState,
+	virtual *evdev.InputDevice,
+	modifiers matcher.ModifierState,
+	stateMap *timers.StateMap,
+) {
 	defer stateMap.Delete(combo)
 
-	defaultInterval := cfg.Settings.DefaultInterval
+	// State tracking
+	count := 1      // First press already happened
+	pressed := true // Key is down
+	phase := 0      // Current phase boundary crossed
 
-	// Link 1: hold / holdrelease / longpress
-	if s := getLink1(shortcuts); s != nil {
-		state.Lock()
-		state.Phase = timers.PhaseHoldWindow
-		state.Unlock()
+	// Build timer ladder: sorted unique thresholds
+	ladder := buildTimerLadder(candidates, cfg.Settings.DefaultInterval)
+	LogDebug("Ladder for %s: %v", combo, ladder)
 
-		interval := intervalOrDefault(s.Interval, defaultInterval)
-		t1 := time.NewTimer(time.Duration(interval) * time.Millisecond)
-		defer t1.Stop()
+	var timer *time.Timer
+	var timerCh <-chan time.Time
 
-		select {
-		case <-ctx.Done():
-			return
-		case <-t1.C:
-			executeLink1(ctx, state, combo, s, cfg, loopState, virtual, modifiers)
-			return
-		case <-state.ReleaseCh:
-			// Released before threshold — continue chain
-		}
-	} else {
-		// No Link 1 — still need first release before doubletap window
-		select {
-		case <-ctx.Done():
-			return
-		case <-state.ReleaseCh:
-		}
+	// Start first timer if ladder exists
+	if len(ladder) > 0 {
+		timer = time.NewTimer(ladder[0])
+		timerCh = timer.C
+		LogDebug("Doubletap timer started: %vms", ladder[0].Milliseconds())
 	}
 
-	// After first release: check if chain continues
-	if !hasLink2(shortcuts) {
-		fireChainResolution(combo, shortcuts, cfg, loopState, virtual, modifiers)
-		return
-	}
-
-	// Link 2: doubletap / taphold window — wait for second press
-	state.Lock()
-	state.Phase = timers.PhaseDoubleTapWindow
-	state.Unlock()
-
-	interval := getLink2Interval(shortcuts, defaultInterval)
-	t2 := time.NewTimer(time.Duration(interval) * time.Millisecond)
-	defer t2.Stop()
-
-	select {
-	case <-ctx.Done():
-		return
-	case <-t2.C:
-		// Window expired — fire onpress fallback
-		fireChainResolution(combo, shortcuts, cfg, loopState, virtual, modifiers)
-		return
-	case <-state.PressCh:
-		// Second press within window — continue to Link 3
-	}
-
-	// Link 3: taphold threshold or wait for second release (doubletap only)
-	if s := getTapHoldLink(shortcuts); s != nil {
-		state.Lock()
-		state.Phase = timers.PhaseTapHoldWindow
-		state.Unlock()
-
-		holdInterval := intervalOrDefault(s.HoldInterval, defaultInterval)
-		t3 := time.NewTimer(time.Duration(holdInterval) * time.Millisecond)
-		defer t3.Stop()
-
+	for {
 		select {
 		case <-ctx.Done():
-			return
-		case <-t3.C:
-			executeTapHold(ctx, state, combo, s, cfg, loopState, virtual)
-		case <-state.ReleaseCh:
-			// Released before threshold — tap wins (or doubletap if defined)
-			if dt := getShortcutByBehavior(shortcuts, config.BehaviorDoubleTap); dt != nil {
-				resolvedCmd := cfg.ResolveCommand(dt.Commands[0])
-				LogMatch(combo+".doubletap", m_getComboCodes(combo))
-				LogTrigger(resolvedCmd)
-				Execute(resolvedCmd, cfg)
-			} else {
-				resolvedCmd := cfg.ResolveCommand(s.Commands[0])
-				LogMatch(combo+".tap", m_getComboCodes(combo))
-				LogTrigger(resolvedCmd)
-				Execute(resolvedCmd, cfg)
+			if timer != nil {
+				timer.Stop()
 			}
-		}
-	} else {
-		// Only doubletap — wait for second release to confirm
-		state.Lock()
-		state.Phase = timers.PhaseTapHoldWindow
-		state.Unlock()
-
-		select {
-		case <-ctx.Done():
 			return
-		case <-state.ReleaseCh:
-		}
 
-		if dt := getShortcutByBehavior(shortcuts, config.BehaviorDoubleTap); dt != nil {
-			resolvedCmd := cfg.ResolveCommand(dt.Commands[0])
-			LogMatch(combo+".doubletap", m_getComboCodes(combo))
-			LogTrigger(resolvedCmd)
-			Execute(resolvedCmd, cfg)
+		case <-state.PressCh:
+			// Second press arrived
+			count++
+			pressed = true
+			LogDebug("Second press: count=%d", count)
+
+			// Prune dead candidates
+			candidates = pruneCandidates(candidates, count, pressed, phase)
+			if len(candidates) == 0 {
+				LogDebug("no candidate won for %s (all pruned after second press)", combo)
+				if timer != nil {
+					timer.Stop()
+				}
+				return
+			}
+
+			// Check for immediate winner
+			if winner := checkWinner(candidates, count, pressed, phase); winner != nil {
+				if timer != nil {
+					timer.Stop()
+				}
+				fireWinner(combo, winner, cfg, loopState, virtual, modifiers, ctx, state)
+				return
+			}
+
+		case <-state.ReleaseCh:
+			// Key released
+			pressed = false
+			LogDebug("Release: count=%d, pressed=false", count)
+
+			// Prune dead candidates
+			candidates = pruneCandidates(candidates, count, pressed, phase)
+			if len(candidates) == 0 {
+				LogDebug("no candidate won for %s (all pruned after release)", combo)
+				if timer != nil {
+					timer.Stop()
+				}
+				return
+			}
+
+			// Check for immediate winner
+			if winner := checkWinner(candidates, count, pressed, phase); winner != nil {
+				if timer != nil {
+					timer.Stop()
+				}
+				fireWinner(combo, winner, cfg, loopState, virtual, modifiers, ctx, state)
+				return
+			}
+
+		case <-timerCh:
+			// Timer expired, advance phase
+			phase++
+			LogDebug("Timer expired: phase=%d", phase)
+
+			// Prune dead candidates
+			candidates = pruneCandidates(candidates, count, pressed, phase)
+
+			// Check for winner
+			if winner := checkWinner(candidates, count, pressed, phase); winner != nil {
+				fireWinner(combo, winner, cfg, loopState, virtual, modifiers, ctx, state)
+				return
+			}
+
+			// No winner yet, advance to next timer threshold
+			if phase < len(ladder) {
+				timer.Reset(ladder[phase])
+				timerCh = timer.C
+				LogDebug("Next timer: %vms", ladder[phase].Milliseconds())
+			} else {
+				// No more timers, resolve with current state
+				LogDebug("no candidate won for %s (ladder exhausted)", combo)
+				return
+			}
 		}
 	}
 }
 
-// executeLink1 runs the hold/holdrelease/longpress behavior after threshold fires.
-func executeLink1(ctx context.Context, state *timers.ComboState, combo string, s *config.ParsedShortcut, cfg *config.Config, loopState *LoopState, virtual *evdev.InputDevice, modifiers matcher.ModifierState) {
+// buildTimerLadder extracts unique sorted timer thresholds from candidates
+func buildTimerLadder(candidates []timers.Candidate, defaultInterval float64) []time.Duration {
+	thresholds := make(map[int]time.Duration)
+
+	for _, c := range candidates {
+		interval := intervalOrDefault(c.Shortcut.Interval, defaultInterval)
+
+		// Phase 1 threshold
+		thresholds[1] = ms(interval)
+
+		// Phase 2 threshold (for taphold/taplongpress)
+		if c.Condition.Phase == 2 {
+			holdInterval := intervalOrDefault(c.Shortcut.HoldInterval, defaultInterval)
+			// Phase 2 timer starts after second press, so it's just the hold interval
+			thresholds[2] = ms(holdInterval)
+		}
+	}
+
+	// Convert to sorted slice
+	var ladder []time.Duration
+	for phase := 1; phase <= len(thresholds); phase++ {
+		if duration, exists := thresholds[phase]; exists {
+			ladder = append(ladder, duration)
+		}
+	}
+
+	return ladder
+}
+
+// pruneCandidates removes candidates that can no longer win
+func pruneCandidates(candidates []timers.Candidate, count int, pressed bool, phase int) []timers.Candidate {
+	pruned := make([]timers.Candidate, 0, len(candidates))
+	for _, c := range candidates {
+		// Can this candidate still possibly win?
+		// It's dead if:
+		// - count already exceeds what it needs
+		// - count is stuck below what it needs and we're past the phase where more presses can arrive
+		// - pressed state is incompatible and we can't change it anymore
+
+		if count > c.Condition.Count {
+			// Too many presses
+			continue
+		}
+
+		if count < c.Condition.Count && phase >= c.Condition.Phase {
+			// Not enough presses and we're past the phase boundary
+			continue
+		}
+
+		// Candidate still alive
+		pruned = append(pruned, c)
+	}
+	return pruned
+}
+
+// checkWinner returns the first candidate whose win condition is satisfied
+func checkWinner(candidates []timers.Candidate, count int, pressed bool, phase int) *timers.Candidate {
+	for i := range candidates {
+		c := &candidates[i]
+		if c.Condition.Count == count &&
+		   c.Condition.Pressed == pressed &&
+		   c.Condition.Phase <= phase {
+			return c
+		}
+	}
+	return nil
+}
+
+// fireWinner executes the winning candidate's shortcut
+func fireWinner(
+	combo string,
+	winner *timers.Candidate,
+	cfg *config.Config,
+	loopState *LoopState,
+	virtual *evdev.InputDevice,
+	modifiers matcher.ModifierState,
+	ctx context.Context,
+	state *timers.ComboState,
+) {
+	s := winner.Shortcut
+
 	switch s.Behavior {
-	case config.BehaviorHold:
+	case config.BehaviorNormal:
+		LogMatch(combo, combo)
+		if s.Repeat {
+			toggleLoopDirect(combo, s, cfg, loopState)
+		} else {
+			executeShortcutWithState(s, cfg, virtual, modifiers, loopState)
+		}
+
+	case config.BehaviorPressRelease:
+		LogMatch(combo+".pressrelease", combo)
+		if s.Commands[0] != "" {
+			resolvedCmd := cfg.ResolveCommand(s.Commands[0])
+			LogTrigger(resolvedCmd)
+			Execute(resolvedCmd, cfg)
+		}
+		// 10ms gap between press and release commands
+		time.AfterFunc(10*time.Millisecond, func() {
+			if s.Commands[1] != "" {
+				resolvedCmd := cfg.ResolveCommand(s.Commands[1])
+				LogTrigger(resolvedCmd)
+				Execute(resolvedCmd, cfg)
+			}
+		})
+
+	case config.BehaviorHold, config.BehaviorLongPress:
 		LogMatch(combo+".hold", combo)
 		if s.Repeat {
 			startLoop(combo, s, cfg, loopState)
@@ -319,9 +388,12 @@ func executeLink1(ctx context.Context, state *timers.ComboState, combo string, s
 			resolvedCmd := cfg.ResolveCommand(s.Commands[0])
 			LogTrigger(resolvedCmd)
 			Execute(resolvedCmd, cfg)
-			select {
-			case <-ctx.Done():
-			case <-state.ReleaseCh:
+			// For longpress, exit immediately
+			if s.Behavior != config.BehaviorLongPress {
+				select {
+				case <-ctx.Done():
+				case <-state.ReleaseCh:
+				}
 			}
 		}
 
@@ -343,136 +415,59 @@ func executeLink1(ctx context.Context, state *timers.ComboState, combo string, s
 			Execute(resolvedCmd, cfg)
 		}
 
-	case config.BehaviorLongPress:
+	case config.BehaviorDoubleTap:
+		fire(combo+".doubletap", s.Commands[0], cfg)
+
+	case config.BehaviorTapHold:
+		LogMatch(combo+".taphold", combo)
 		resolvedCmd := cfg.ResolveCommand(s.Commands[0])
-		LogMatch(combo+".longpress", combo)
 		LogTrigger(resolvedCmd)
-		Execute(resolvedCmd, cfg)
-		// One-shot: no sustain
-	}
-}
-
-// executeTapHold runs after taphold/taplongpress threshold fires at Link 3.
-func executeTapHold(ctx context.Context, state *timers.ComboState, combo string, s *config.ParsedShortcut, cfg *config.Config, loopState *LoopState, virtual *evdev.InputDevice) {
-	if s.Behavior == config.BehaviorTapLongPress {
-		resolvedCmd := cfg.ResolveCommand(s.Commands[1])
-		LogMatch(combo+".taplongpress", combo)
-		LogTrigger(resolvedCmd)
-		Execute(resolvedCmd, cfg)
-		return
-	}
-
-	// taphold: sustain Commands[1] until release
-	LogMatch(combo+".taphold", combo)
-	resolvedCmd := cfg.ResolveCommand(s.Commands[1])
-	LogTrigger(resolvedCmd)
-	cmd := ExecuteTracked(resolvedCmd, cfg)
-	if cmd != nil {
+		cmd := ExecuteTracked(resolvedCmd, cfg)
+		if cmd != nil {
+			loopState.mu.Lock()
+			loopState.heldProcesses[combo] = cmd
+			loopState.mu.Unlock()
+		}
+		select {
+		case <-ctx.Done():
+		case <-state.ReleaseCh:
+		}
 		loopState.mu.Lock()
-		loopState.heldProcesses[combo] = cmd
-		loopState.mu.Unlock()
-	}
-	select {
-	case <-ctx.Done():
-	case <-state.ReleaseCh:
-	}
-	stopHeldProcess(combo, loopState, virtual)
-}
-
-// fireChainResolution fires onpress fallback and pressrelease Commands[1] when the chain
-// exhausts without any link triggering.
-func fireChainResolution(combo string, shortcuts []*config.ParsedShortcut, cfg *config.Config, loopState *LoopState, virtual *evdev.InputDevice, modifiers matcher.ModifierState) {
-	if s := getShortcutByBehavior(shortcuts, config.BehaviorNormal); s != nil {
-		LogMatch(combo, combo)
-		if s.Repeat {
-			toggleLoopDirect(combo, s, cfg, loopState)
-		} else {
-			executeShortcutWithState(s, cfg, virtual, modifiers, loopState)
+		if c, exists := loopState.heldProcesses[combo]; exists {
+			StopProcess(c)
+			delete(loopState.heldProcesses, combo)
 		}
-	}
-	if s := getShortcutByBehavior(shortcuts, config.BehaviorPressRelease); s != nil && s.Commands[1] != "" {
+		loopState.mu.Unlock()
+
+	case config.BehaviorTapLongPress:
+		LogMatch(combo+".taplongpress", combo)
 		resolvedCmd := cfg.ResolveCommand(s.Commands[1])
-		LogMatch(combo+".pressrelease.release", combo)
 		LogTrigger(resolvedCmd)
 		Execute(resolvedCmd, cfg)
 	}
 }
 
-// --- Chain link helpers ---
-
-func hasChainBehaviors(shortcuts []*config.ParsedShortcut) bool {
-	for _, s := range shortcuts {
-		switch s.Behavior {
-		case config.BehaviorHold, config.BehaviorHoldRelease, config.BehaviorLongPress,
-			config.BehaviorDoubleTap, config.BehaviorTapHold, config.BehaviorTapLongPress:
-			return true
-		}
-	}
-	return false
+// fire is a helper for simple one-shot command execution with logging.
+func fire(label, command string, cfg *config.Config) {
+	resolvedCmd := cfg.ResolveCommand(command)
+	LogMatch(label, label)
+	LogTrigger(resolvedCmd)
+	Execute(resolvedCmd, cfg)
 }
 
-func getLink1(shortcuts []*config.ParsedShortcut) *config.ParsedShortcut {
-	for _, s := range shortcuts {
-		switch s.Behavior {
-		case config.BehaviorHold, config.BehaviorHoldRelease, config.BehaviorLongPress:
-			return s
-		}
-	}
-	return nil
+// ms converts float64 milliseconds to time.Duration.
+func ms(d float64) time.Duration {
+	return time.Duration(d) * time.Millisecond
 }
 
-func hasLink2(shortcuts []*config.ParsedShortcut) bool {
-	for _, s := range shortcuts {
-		switch s.Behavior {
-		case config.BehaviorDoubleTap, config.BehaviorTapHold, config.BehaviorTapLongPress:
-			return true
-		}
-	}
-	return false
-}
-
-// getLink2Interval returns the doubletap/taphold window interval for Link 2.
-func getLink2Interval(shortcuts []*config.ParsedShortcut, defaultInterval float64) float64 {
-	for _, s := range shortcuts {
-		switch s.Behavior {
-		case config.BehaviorDoubleTap, config.BehaviorTapHold, config.BehaviorTapLongPress:
-			return intervalOrDefault(s.Interval, defaultInterval)
-		}
-	}
-	return defaultInterval
-}
-
-func getTapHoldLink(shortcuts []*config.ParsedShortcut) *config.ParsedShortcut {
-	for _, s := range shortcuts {
-		if s.Behavior == config.BehaviorTapHold || s.Behavior == config.BehaviorTapLongPress {
-			return s
-		}
-	}
-	return nil
-}
-
-func getShortcutByBehavior(shortcuts []*config.ParsedShortcut, behavior config.BehaviorMode) *config.ParsedShortcut {
-	for _, s := range shortcuts {
-		if s.Behavior == behavior {
-			return s
-		}
-	}
-	return nil
-}
-
-// m_getComboCodes is a logging helper — returns combo string directly since we don't have matcher here.
-func m_getComboCodes(combo string) string {
-	return combo
-}
-
-// --- Execution helpers ---
-
-func intervalOrDefault(interval, defaultInterval float64) float64 {
+func intervalOrDefault(interval, def float64) float64 {
 	if interval > 0 {
 		return interval
 	}
-	return defaultInterval
+	return def
 }
+
+// --- Loop and process management ---
 
 func executeShortcutWithState(shortcut *config.ParsedShortcut, cfg *config.Config, virtual *evdev.InputDevice, heldModifiers matcher.ModifierState, loopState *LoopState) {
 	if shortcut.IsRemap {
@@ -542,7 +537,6 @@ func startLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Config
 
 	resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
 	LogTrigger(resolvedCmd)
-
 	go runTickerLoop(ctx, interval, func() { Execute(resolvedCmd, cfg) })
 }
 
@@ -564,9 +558,7 @@ func startHeldProcess(combo string, shortcut *config.ParsedShortcut, cfg *config
 		if codes, exists := state.heldKeys[combo]; exists {
 			EmitKeysUp(virtual, codes)
 		}
-		LogDebug("hold remap: pressing down >%s", shortcut.RemapCombo)
 		codes := EmitKeysDown(virtual, shortcut.RemapCombo, heldModifiers)
-		LogDebug("hold remap: stored %d codes for %s", len(codes), combo)
 		if len(codes) > 0 {
 			state.heldKeys[combo] = codes
 		}
@@ -595,16 +587,15 @@ func stopHeldProcess(combo string, state *LoopState, virtual *evdev.InputDevice)
 	defer state.mu.Unlock()
 
 	if codes, exists := state.heldKeys[combo]; exists {
-		LogDebug("hold remap: releasing %d codes for %s", len(codes), combo)
 		EmitKeysUp(virtual, codes)
 		delete(state.heldKeys, combo)
 		return
 	}
 
+	// Fallback: match by base key in case modifier state drifted
 	baseKey := baseKeyFromCombo(combo)
 	for storedCombo, codes := range state.heldKeys {
 		if baseKeyFromCombo(storedCombo) == baseKey {
-			LogDebug("hold remap: releasing %d codes for %s (combo drifted to %s)", len(codes), storedCombo, combo)
 			EmitKeysUp(virtual, codes)
 			delete(state.heldKeys, storedCombo)
 			return
@@ -638,13 +629,10 @@ func toggleLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Confi
 
 		resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
 		LogTrigger(resolvedCmd)
-
 		go runTickerLoop(ctx, interval, func() { Execute(resolvedCmd, cfg) })
 	}
 }
 
-// toggleLoopDirect is used in chain fallback where we don't have a matcher reference.
-// It duplicates the toggle logic using LoopState instead of matcher state.
 func toggleLoopDirect(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, loopState *LoopState) {
 	loopState.mu.Lock()
 	_, running := loopState.active[combo]
@@ -665,7 +653,6 @@ func executeSwitchShortcut(combo string, shortcut *config.ParsedShortcut, m *mat
 	key := fmt.Sprintf("%s.switch.%d", groupKey, shortcut.Timing)
 	command := m.GetNextSwitchCommand(key, shortcut.Commands)
 	resolvedCmd := cfg.ResolveCommand(command)
-
 	LogTrigger(resolvedCmd)
 	Execute(resolvedCmd, cfg)
 }
