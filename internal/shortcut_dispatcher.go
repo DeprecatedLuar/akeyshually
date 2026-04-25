@@ -46,23 +46,54 @@ func runTickerLoop(ctx context.Context, interval float64, fn func()) {
 	}
 }
 
+// EmittedModifierTracker tracks which modifiers we've emitted to system (so we can release them)
+type EmittedModifierTracker struct {
+	mu       sync.Mutex
+	emitted  map[string]bool // modifier name -> emitted state
+}
+
+func NewEmittedModifierTracker() *EmittedModifierTracker {
+	return &EmittedModifierTracker{
+		emitted: make(map[string]bool),
+	}
+}
+
+func (t *EmittedModifierTracker) MarkEmitted(keyName string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.emitted[keyName] = true
+}
+
+func (t *EmittedModifierTracker) WasEmitted(keyName string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.emitted[keyName]
+}
+
+func (t *EmittedModifierTracker) ClearEmitted(keyName string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.emitted, keyName)
+}
+
 func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *LoopState, virtual *evdev.InputDevice) KeyHandler {
 	stateMap := timers.NewStateMap()
+	emittedTracker := NewEmittedModifierTracker()
 	return func(code uint16, value int32) bool {
 		if cfg.Settings.DisableMediaKeys && IsMediaKey(code) {
 			return false
 		}
 		if value == 1 {
-			return handlePress(code, m, cfg, loopState, virtual, stateMap)
+			return handlePress(code, m, cfg, loopState, virtual, stateMap, emittedTracker)
 		}
 		if value == 0 {
-			return handleRelease(code, m, cfg, loopState, virtual, stateMap)
+			return handleRelease(code, m, cfg, loopState, virtual, stateMap, emittedTracker)
 		}
 		return false
 	}
 }
 
-func handlePress(code uint16, m *matcher.Matcher, cfg *config.Config, loopState *LoopState, virtual *evdev.InputDevice, stateMap *timers.StateMap) bool {
+func handlePress(code uint16, m *matcher.Matcher, cfg *config.Config, loopState *LoopState, virtual *evdev.InputDevice, stateMap *timers.StateMap, emittedTracker *EmittedModifierTracker) bool {
 	LogKey(matcher.GetKeyName(code), code)
 	m.ClearTapCandidate()
 
@@ -86,38 +117,63 @@ func handlePress(code uint16, m *matcher.Matcher, cfg *config.Config, loopState 
 	} else {
 		combo = m.GetCurrentCombo(code)
 		m.UpdateModifierState(code, true)
-		shortcuts = m.GetShortcuts(combo)
 
-		if len(shortcuts) == 0 {
-			return false
-		}
-
-		// Cancel any active modifier ladders (prevents super.doubletap from firing when super+t is pressed)
+		// Cancel any active modifier ladders and emit them (user is using modifier for a combo)
 		modifiers := m.GetCurrentModifiers()
 		if modifiers.Super {
 			if state := stateMap.Get("super"); state != nil {
+				LogDebug("Cancelling super ladder (combo detected), emitting super keydown")
 				state.Cancel()
 				stateMap.Delete("super")
+				// Emit super keydown so system receives it
+				if virtual != nil {
+					emitModifierKey(virtual, matcher.ResolveKeyCode, "super", true)
+					emittedTracker.MarkEmitted("super")
+				}
 			}
 		}
 		if modifiers.Ctrl {
 			if state := stateMap.Get("ctrl"); state != nil {
+				LogDebug("Cancelling ctrl ladder (combo detected), emitting ctrl keydown")
 				state.Cancel()
 				stateMap.Delete("ctrl")
+				if virtual != nil {
+					emitModifierKey(virtual, matcher.ResolveKeyCode, "ctrl", true)
+					emittedTracker.MarkEmitted("ctrl")
+				}
 			}
 		}
 		if modifiers.Alt {
 			if state := stateMap.Get("alt"); state != nil {
+				LogDebug("Cancelling alt ladder (combo detected), emitting alt keydown")
 				state.Cancel()
 				stateMap.Delete("alt")
+				if virtual != nil {
+					emitModifierKey(virtual, matcher.ResolveKeyCode, "alt", true)
+					emittedTracker.MarkEmitted("alt")
+				}
 			}
 		}
 		if modifiers.Shift {
 			if state := stateMap.Get("shift"); state != nil {
+				LogDebug("Cancelling shift ladder (combo detected), emitting shift keydown")
 				state.Cancel()
 				stateMap.Delete("shift")
+				if virtual != nil {
+					emitModifierKey(virtual, matcher.ResolveKeyCode, "shift", true)
+					emittedTracker.MarkEmitted("shift")
+				}
 			}
 		}
+
+		shortcuts = m.GetShortcuts(combo)
+		if len(shortcuts) == 0 {
+			LogDebug("No shortcuts for %s, forwarding", combo)
+			return false
+		}
+
+		LogDebug("Combo %s detected with modifiers: super=%v ctrl=%v alt=%v shift=%v",
+			combo, modifiers.Super, modifiers.Ctrl, modifiers.Alt, modifiers.Shift)
 	}
 
 	// Forward second press to a goroutine waiting in the doubletap window
@@ -150,26 +206,38 @@ func handlePress(code uint16, m *matcher.Matcher, cfg *config.Config, loopState 
 	ctx, cancel := context.WithCancel(context.Background())
 	state := timers.NewComboState(cancel)
 	stateMap.Set(combo, state)
-	go runLadder(ctx, state, combo, candidates, cfg, loopState, virtual, modifiers, stateMap)
+	go runLadder(ctx, state, combo, candidates, cfg, loopState, virtual, modifiers, stateMap, emittedTracker)
 	return true
 }
 
-func handleRelease(code uint16, m *matcher.Matcher, cfg *config.Config, loopState *LoopState, virtual *evdev.InputDevice, stateMap *timers.StateMap) bool {
+func handleRelease(code uint16, m *matcher.Matcher, cfg *config.Config, loopState *LoopState, virtual *evdev.InputDevice, stateMap *timers.StateMap, emittedTracker *EmittedModifierTracker) bool {
 	if matcher.IsModifierKey(code) {
+		combo := matcher.GetKeyName(code)
+		LogDebug("Modifier %s released", combo)
+
 		if command, matched := m.CheckTap(code); matched {
 			resolvedCmd := cfg.ResolveCommand(command)
-			LogMatch(matcher.GetKeyName(code)+".tap", fmt.Sprintf("%d", code))
+			LogMatch(combo+".tap", fmt.Sprintf("%d", code))
 			LogTrigger(resolvedCmd)
 			Execute(resolvedCmd, cfg)
 		}
 		m.UpdateModifierState(code, false)
 
 		// Signal release to active ladder if one exists
-		combo := matcher.GetKeyName(code)
 		if state := stateMap.Get(combo); state != nil {
+			LogDebug("Signaling release to %s ladder", combo)
 			state.SignalRelease()
 		}
 
+		// If we emitted this modifier to system, also emit the release
+		if emittedTracker.WasEmitted(combo) {
+			LogDebug("Emitting %s release (we emitted the press)", combo)
+			emitModifierKey(virtual, matcher.ResolveKeyCode, combo, false)
+			emittedTracker.ClearEmitted(combo)
+			return true // Suppress original release since we emitted it
+		}
+
+		LogDebug("Forwarding %s release to system", combo)
 		return false
 	}
 
@@ -199,6 +267,7 @@ func runLadder(
 	virtual *evdev.InputDevice,
 	modifiers matcher.ModifierState,
 	stateMap *timers.StateMap,
+	emittedTracker *EmittedModifierTracker,
 ) {
 	defer stateMap.Delete(combo)
 
@@ -224,6 +293,7 @@ func runLadder(
 	for {
 		select {
 		case <-ctx.Done():
+			LogDebug("Ladder for %s cancelled", combo)
 			if timer != nil {
 				timer.Stop()
 			}
@@ -298,8 +368,17 @@ func runLadder(
 				timerCh = timer.C
 				LogDebug("Next timer: %vms", ladder[phase].Milliseconds())
 			} else {
-				// No more timers, resolve with current state
+				// No more timers, ladder exhausted with no winner
 				LogDebug("no candidate won for %s (ladder exhausted)", combo)
+
+				// If this is a modifier key that was suppressed, emit it now so system receives it
+				if isModifierCombo(combo) && virtual != nil {
+					LogDebug("Emitting unmatched modifier %s to system (pressed=%v)", combo, pressed)
+					emitModifierKey(virtual, matcher.ResolveKeyCode, combo, pressed)
+					if pressed {
+						emittedTracker.MarkEmitted(combo)
+					}
+				}
 				return
 			}
 		}
@@ -626,6 +705,28 @@ func startHeldProcess(combo string, shortcut *config.ParsedShortcut, cfg *config
 func baseKeyFromCombo(combo string) string {
 	parts := strings.Split(combo, "+")
 	return parts[len(parts)-1]
+}
+
+// isModifierCombo checks if a combo is a lone modifier key
+func isModifierCombo(combo string) bool {
+	return combo == "super" || combo == "ctrl" || combo == "alt" || combo == "shift"
+}
+
+// emitModifierKey emits a modifier key event to the virtual keyboard
+func emitModifierKey(virtual *evdev.InputDevice, resolver func(string) (uint16, bool), keyName string, down bool) {
+	code, ok := resolver(keyName)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "Failed to resolve modifier key: %s\n", keyName)
+		return
+	}
+
+	value := int32(0)
+	if down {
+		value = 1
+	}
+
+	virtual.WriteOne(&evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(code), Value: value})
+	virtual.WriteOne(&evdev.InputEvent{Type: evdev.EV_SYN, Code: evdev.SYN_REPORT, Value: 0})
 }
 
 func stopHeldProcess(combo string, state *LoopState, virtual *evdev.InputDevice) {
