@@ -43,7 +43,7 @@ func winConditionFor(b config.BehaviorMode) (WinCondition, bool) {
 	case config.BehaviorHold, config.BehaviorHoldRelease, config.BehaviorLongPress:
 		return WinCondition{Count: 1, Pressed: true, Phase: 1}, true
 	case config.BehaviorDoubleTap:
-		return WinCondition{Count: 2, Pressed: false, Phase: 1}, true
+		return WinCondition{Count: 2, Pressed: false, Phase: 0}, true
 	case config.BehaviorTapHold, config.BehaviorTapLongPress:
 		return WinCondition{Count: 2, Pressed: true, Phase: 2}, true
 	}
