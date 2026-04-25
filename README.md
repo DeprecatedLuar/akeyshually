@@ -129,25 +129,24 @@ Config lives at `~/.config/akeyshually/`:
 
 <h3 id="behaviors">Behaviors</h3>
 
-**Triggers** — when the action fires:
+**Triggers** — when the action fires (time-gated, race each other):
 
 | Trigger | Syntax | Description |
 |:--------|:-------|:------------|
-| `.onpress` | `"key"` | Executes on key press (default) |
-| `.onrelease` | `"key.onrelease"` | Executes on key release |
-| `.doubletap(ms)` | `"key.doubletap(200)"` | Executes on double-tap |
-| `.whileheld` | `"key.whileheld"` | Starts on press, process killed on release |
-| `.hold(ms)` | `"key.hold(500)"` | Triggers on hold, does not kill on release |
-| `.tap(ms)whileheld(ms)` | `"key.tap(200)whileheld(500)"` | Tap then tap+hold on next hit to trigger |
-| `.pressrelease` | `"key.pressrelease"` | Executes on both press and release |
+| *(default)* / `.onpress` | `"key"` | Executes on key press |
+| `.doubletap` / `.doubletap(ms)` | `"key.doubletap(200)"` | Executes on confirmed double-tap |
+| `.hold` / `.hold(ms)` | `"key.hold(500)"` | Fire once after hold threshold (1 command) |
+| `.pressrelease` | `"key.pressrelease" = ["cmd", "release_cmd"]` | Execute on press and release (either can be `""`) |
+| `.taphold` / `.taphold(ms)` | `"key.taphold(200)"` | Tap once, then tap-and-hold on next press |
+| `.longpress` / `.longpress(ms)` | `"key.longpress(500)"` | Fire once after threshold (one-shot, exits immediately) |
+| `.holdrelease` / `.holdrelease(ms)` | `"key.holdrelease(500)" = ["hold_cmd", "release_cmd"]` | Execute at hold threshold and on release |
 
-**Modifiers** — stack on top of triggers:
+**Modifiers** — stack on top of triggers (never create timer ambiguity):
 
 | Modifier | Syntax | Description |
 |:---------|:-------|:------------|
-| `.repeat-whileheld(ms)` | `"key.repeat-whileheld(50)"` | Repeats while held |
-| `.repeat-toggle(ms)` | `"key.repeat-toggle(50)"` | Toggles a repeat loop on/off |
 | `.switch` | `"key.switch" = ["cmd1", "cmd2"]` | Cycles through a command array |
+| `.repeat` | `"key.hold.repeat"` | Loops command while held |
 | `.passthrough` | `"key.passthrough"` | Ignores modifiers when matching |
 
 ### Config Overlays
@@ -191,7 +190,7 @@ env_file = "~/.profile"
 
 #-[LAUNCHERS]--------------------------------
 
-"super.onrelease" = "hotline"
+"super.pressrelease" = ["", "hotline"]
 "super.doubletap(270)" = "$LAUNCHER"
 
 "super+enter" = "$TERMINAL"
@@ -274,22 +273,17 @@ mic_down = "wpctl set-volume @DEFAULT_AUDIO_SOURCE@ 5%-"
 "super+t" = "kitty"  # Executes on key press
 ```
 
-**While Held (process lifecycle tied to key):**
+**Hold (fire once after threshold):**
 ```toml
-"super+f.whileheld" = "$FILEMANAGER"   # Opens on press, closes on release
+"super+m.hold" = "mute"                 # Fire once after default threshold
+"super+m.hold(500)" = "mute"            # Fire once after 500ms (no process management)
 ```
 
-**Repeat While Held (repeat command while key is held):**
+**Repeat while held:**
 ```toml
-"f9.repeat-whileheld" = "xdotool click 1"       # Uses default_interval
-"f9.repeat-whileheld(50)" = "xdotool click 1"   # Custom interval (50ms)
-"f9.repeat-whileheld(0.015)" = "xdotool click"  # Sub-second intervals (15ms)
-```
-
-**Repeat Toggle (start/stop on each press):**
-```toml
-"f10.repeat-toggle" = "xdotool click 1"       # Loop continues after release
-"f10.repeat-toggle(100)" = "xdotool click 1"  # Custom interval in ms
+"f9.hold.repeat" = "xdotool click 1"         # Uses default_interval
+"f9.hold.repeat(50)" = "xdotool click 1"     # Custom interval (50ms)
+"f9.onpress.repeat" = "xdotool click 1"      # Toggle: start/stop on each press
 ```
 
 **Switch (cycle through commands):**
@@ -303,10 +297,22 @@ mic_down = "wpctl set-volume @DEFAULT_AUDIO_SOURCE@ 5%-"
 "print.doubletap(300)" = "screen-record"  # Works on any single key
 ```
 
-**Release timing:**
+**Press/Release (dual commands):**
 ```toml
-"super.onrelease" = "rofi"  # Modifier tap: executes on release if pressed alone
-"super+t.onrelease" = "cmd" # Executes when keys are released
+"super.pressrelease" = ["", "rofi"]            # Release only (modifier tap)
+"super+m.pressrelease" = ["mic-on", "mic-off"] # Both press and release
+```
+
+**Tap-then-hold:**
+```toml
+"super+t.taphold" = "hold-cmd"                     # Tap once, then tap-and-hold
+"super+t.taphold(200)" = "hold-cmd"                # Custom tap window (200ms)
+"super+t.taphold(200, 500)" = "hold-cmd"           # Custom tap + hold thresholds
+```
+
+**Long press:**
+```toml
+"super+h.longpress(1000)" = "shutdown"  # Fire once after 1000ms (one-shot)
 ```
 
 </details>
