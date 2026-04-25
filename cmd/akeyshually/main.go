@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -24,6 +25,19 @@ func main() {
 	if result.RunForeground {
 		startDaemon(result.ConfigPath)
 	}
+}
+
+func handleConfigError(err error) {
+	// Check if it's a ValidationErrors type (possibly wrapped) and format nicely
+	var ve config.ValidationErrors
+	if errors.As(err, &ve) {
+		ve.FormatWithGohelp()
+	} else {
+		// Fallback for other config errors
+		fmt.Fprintf(os.Stderr, "Config error: %v\n", err)
+	}
+	internal.NotifyError("akeyshually startup failed", fmt.Sprintf("Config error: %v", err))
+	os.Exit(1)
 }
 
 func startDaemon(configPath string) {
@@ -66,9 +80,7 @@ func startDaemon(configPath string) {
 		// Custom config - no overlays
 		cfg, err = config.LoadFromPath(configPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Config error: %v\n", err)
-			internal.NotifyError("akeyshually startup failed", fmt.Sprintf("Config error: %v", err))
-			os.Exit(1)
+			handleConfigError(err)
 		}
 	} else {
 		// Default config with overlays
@@ -79,9 +91,7 @@ func startDaemon(configPath string) {
 		}
 		cfg, err = config.LoadWithOverlays(enabledOverlays)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Config error: %v\n", err)
-			internal.NotifyError("akeyshually startup failed", fmt.Sprintf("Config error: %v", err))
-			os.Exit(1)
+			handleConfigError(err)
 		}
 		if len(enabledOverlays) > 0 {
 			fmt.Printf("Enabled overlays: %v\n", enabledOverlays)
