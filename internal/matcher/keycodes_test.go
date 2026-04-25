@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/deprecatedluar/akeyshually/internal/keys"
 )
 
 func TestGetAbsNameKnown(t *testing.T) {
-	for code, expected := range absCodeNames {
+	for code, expected := range keys.AbsCodeNames {
 		got := GetAbsName(code)
 		if got != expected {
 			t.Errorf("GetAbsName(%d) = %q, want %q", code, got, expected)
@@ -27,7 +29,7 @@ func TestGetAbsNameUnknown(t *testing.T) {
 }
 
 func TestBtnKeysInKeyCodeMap(t *testing.T) {
-	keys := []string{
+	keyNames := []string{
 		"btn_0", "btn_1", "btn_2", "btn_3", "btn_4",
 		"btn_5", "btn_6", "btn_7", "btn_8", "btn_9",
 		"btn_south", "btn_north", "btn_east", "btn_west",
@@ -37,9 +39,9 @@ func TestBtnKeysInKeyCodeMap(t *testing.T) {
 		"btn_tool_pen", "btn_touch", "btn_stylus", "btn_stylus2",
 	}
 
-	for _, key := range keys {
-		code := getKeyCode(key)
-		if code == 0 {
+	for _, key := range keyNames {
+		code, ok := ResolveKeyCode(key)
+		if !ok || code == 0 {
 			t.Errorf("key %q not in keyCodeMap", key)
 			continue
 		}
@@ -63,8 +65,8 @@ func TestBtnKeysNoDuplicateCodes(t *testing.T) {
 
 	seen := make(map[uint16]string)
 	for _, key := range btnKeys {
-		code := getKeyCode(key)
-		if code == 0 {
+		code, ok := ResolveKeyCode(key)
+		if !ok || code == 0 {
 			continue
 		}
 		if prev, exists := seen[code]; exists {

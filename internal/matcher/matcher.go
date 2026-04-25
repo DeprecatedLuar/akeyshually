@@ -162,7 +162,7 @@ func extractBaseKey(combo string) string {
 func (m *Matcher) GetCurrentCombo(code uint16) string {
 	// Fast path: no modifiers (most common case)
 	if !m.state.Super && !m.state.Ctrl && !m.state.Alt && !m.state.Shift {
-		return codeToNameMap[code]
+		return GetKeyName(code)
 	}
 
 	m.comboBuilder.Reset()
@@ -194,7 +194,7 @@ func (m *Matcher) GetCurrentCombo(code uint16) string {
 		needPlus = true
 	}
 
-	if name := codeToNameMap[code]; name != "" {
+	if name := GetKeyName(code); name != "" {
 		if needPlus {
 			m.comboBuilder.WriteByte('+')
 		}
