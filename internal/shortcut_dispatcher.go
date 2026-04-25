@@ -306,20 +306,22 @@ func runLadder(
 	}
 }
 
-// buildTimerLadder extracts unique sorted timer thresholds from candidates
+// buildTimerLadder extracts unique sorted timer thresholds from candidates.
+// Only adds timers for phases that candidates actually need.
 func buildTimerLadder(candidates []timers.Candidate, defaultInterval float64) []time.Duration {
 	thresholds := make(map[int]time.Duration)
 
 	for _, c := range candidates {
 		interval := intervalOrDefault(c.Shortcut.Interval, defaultInterval)
 
-		// Phase 1 threshold
-		thresholds[1] = ms(interval)
+		// Only add Phase 1 threshold if candidate needs it
+		if c.Condition.Phase >= 1 {
+			thresholds[1] = ms(interval)
+		}
 
 		// Phase 2 threshold (for taphold/taplongpress)
 		if c.Condition.Phase == 2 {
 			holdInterval := intervalOrDefault(c.Shortcut.HoldInterval, defaultInterval)
-			// Phase 2 timer starts after second press, so it's just the hold interval
 			thresholds[2] = ms(holdInterval)
 		}
 	}

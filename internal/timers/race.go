@@ -21,11 +21,26 @@ type Candidate struct {
 	Condition WinCondition
 }
 
-// BuildCandidates maps shortcuts to their win conditions.
+// BuildCandidates maps shortcuts to their win conditions with context-aware phase assignment.
+// Phases are determined by what other triggers exist on the same key.
 func BuildCandidates(shortcuts []*config.ParsedShortcut) []Candidate {
+	// Detect what behaviors are present
+	hasDoubleTap := false
+	hasTapHold := false
+
+	for _, s := range shortcuts {
+		if s.Behavior == config.BehaviorDoubleTap {
+			hasDoubleTap = true
+		}
+		if s.Behavior == config.BehaviorTapHold || s.Behavior == config.BehaviorTapLongPress {
+			hasTapHold = true
+		}
+	}
+
+	// Build candidates with context-aware phases
 	var out []Candidate
 	for _, s := range shortcuts {
-		cond, ok := winConditionFor(s.Behavior)
+		cond, ok := contextAwareWinCondition(s.Behavior, hasDoubleTap, hasTapHold)
 		if !ok {
 			continue
 		}
@@ -34,16 +49,29 @@ func BuildCandidates(shortcuts []*config.ParsedShortcut) []Candidate {
 	return out
 }
 
-func winConditionFor(b config.BehaviorMode) (WinCondition, bool) {
+// contextAwareWinCondition assigns win conditions based on behavior and what other triggers exist.
+func contextAwareWinCondition(b config.BehaviorMode, hasDoubleTap, hasTapHold bool) (WinCondition, bool) {
 	switch b {
 	case config.BehaviorNormal:
-		return WinCondition{Count: 1, Pressed: false, Phase: 1}, true
+		// If doubletap exists, onpress must wait for doubletap window to close
+		if hasDoubleTap {
+			return WinCondition{Count: 1, Pressed: false, Phase: 1}, true
+		}
+		// Solo onpress wins immediately on release
+		return WinCondition{Count: 1, Pressed: false, Phase: 0}, true
+
 	case config.BehaviorPressRelease:
-		return WinCondition{Count: 1, Pressed: false, Phase: 1}, true
+		if hasDoubleTap {
+			return WinCondition{Count: 1, Pressed: false, Phase: 1}, true
+		}
+		return WinCondition{Count: 1, Pressed: false, Phase: 0}, true
+
 	case config.BehaviorHold, config.BehaviorHoldRelease, config.BehaviorLongPress:
 		return WinCondition{Count: 1, Pressed: true, Phase: 1}, true
+
 	case config.BehaviorDoubleTap:
 		return WinCondition{Count: 2, Pressed: false, Phase: 0}, true
+
 	case config.BehaviorTapHold, config.BehaviorTapLongPress:
 		return WinCondition{Count: 2, Pressed: true, Phase: 2}, true
 	}
