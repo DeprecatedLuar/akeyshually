@@ -111,7 +111,7 @@ func TestPressReleaseParsing(t *testing.T) {
 }
 
 func TestPressReleaseSingleCommandRejected(t *testing.T) {
-	_, err := ParseShortcut("super+m.pressrelease", "mic-on")
+	err := validateShortcutEntry("super+m.pressrelease", "mic-on", "test.toml")
 	if err == nil {
 		t.Fatal("expected error for single command, got nil")
 	}
@@ -128,7 +128,7 @@ func TestHoldBehavior(t *testing.T) {
 }
 
 func TestHoldTwoCommandsRejected(t *testing.T) {
-	_, err := ParseShortcut("super+h.hold", []interface{}{"start", "stop"})
+	err := validateShortcutEntry("super+h.hold", []interface{}{"start", "stop"}, "test.toml")
 	if err == nil {
 		t.Fatal("expected error for 2-command hold, got nil")
 	}
@@ -164,13 +164,6 @@ func TestHoldReleaseWithInterval(t *testing.T) {
 	}
 	if ps.Interval != 500 {
 		t.Errorf("Interval = %v, want 500", ps.Interval)
-	}
-}
-
-func TestMigrationErrorOnrelease(t *testing.T) {
-	_, err := ParseShortcut("super.onrelease", "rofi")
-	if err == nil || err.Error() != "onrelease removed: use .pressrelease = [\"\", \"cmd\"]" {
-		t.Errorf("expected migration error, got: %v", err)
 	}
 }
 
@@ -263,44 +256,9 @@ func TestDoubleTapSwitchParsing(t *testing.T) {
 }
 
 func TestLongPressRepeatRejected(t *testing.T) {
-	_, err := ParseShortcut("super+h.longpress.repeat", "cmd")
+	err := validateShortcutEntry("super+h.longpress.repeat", "cmd", "test.toml")
 	if err == nil {
 		t.Fatal("expected error for longpress.repeat, got nil")
-	}
-}
-
-func TestMigrationErrorWhileheld(t *testing.T) {
-	_, err := ParseShortcut("super+h.whileheld", "cmd")
-	if err == nil || err.Error() != "whileheld removed: use .hold" {
-		t.Errorf("expected migration error, got: %v", err)
-	}
-}
-
-func TestMigrationErrorRepeatWhileheld(t *testing.T) {
-	_, err := ParseShortcut("super+h.repeat-whileheld", "cmd")
-	if err == nil || err.Error() != "repeat-whileheld removed: use .hold.repeat" {
-		t.Errorf("expected migration error, got: %v", err)
-	}
-}
-
-func TestMigrationErrorRepeatToggle(t *testing.T) {
-	_, err := ParseShortcut("super+r.repeat-toggle", "cmd")
-	if err == nil || err.Error() != "repeat-toggle removed: use .onpress.repeat" {
-		t.Errorf("expected migration error, got: %v", err)
-	}
-}
-
-func TestMigrationErrorToggle(t *testing.T) {
-	_, err := ParseShortcut("super+r.toggle", "cmd")
-	if err == nil || err.Error() != "toggle removed: use .onpress.repeat" {
-		t.Errorf("expected migration error, got: %v", err)
-	}
-}
-
-func TestMigrationErrorTapwhileheld(t *testing.T) {
-	_, err := ParseShortcut("super+t.tapwhileheld", []interface{}{"tap", "hold"})
-	if err == nil || err.Error() != "tapwhileheld removed: use .taphold" {
-		t.Errorf("expected migration error, got: %v", err)
 	}
 }
 

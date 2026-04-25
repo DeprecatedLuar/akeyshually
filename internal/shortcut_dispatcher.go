@@ -725,8 +725,10 @@ func emitModifierKey(virtual *evdev.InputDevice, resolver func(string) (uint16, 
 		value = 1
 	}
 
-	virtual.WriteOne(&evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(code), Value: value})
-	virtual.WriteOne(&evdev.InputEvent{Type: evdev.EV_SYN, Code: evdev.SYN_REPORT, Value: 0})
+	LogDebug("emitModifierKey: writing %s (code=%d, value=%d) to virtual device", keyName, code, value)
+	err1 := virtual.WriteOne(&evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(code), Value: value})
+	err2 := virtual.WriteOne(&evdev.InputEvent{Type: evdev.EV_SYN, Code: evdev.SYN_REPORT, Value: 0})
+	LogDebug("emitModifierKey: write results: key_err=%v, syn_err=%v", err1, err2)
 }
 
 func stopHeldProcess(combo string, state *LoopState, virtual *evdev.InputDevice) {

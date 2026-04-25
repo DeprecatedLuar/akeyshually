@@ -169,12 +169,15 @@ func loadFromFile(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("config not found: %s", configPath)
 	}
 
-	if _, err := toml.DecodeFile(configPath, cfg); err != nil {
+	// Decode with metadata to get line numbers
+	meta, err := toml.DecodeFile(configPath, cfg)
+	if err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
-	if len(cfg.Shortcuts) == 0 {
-		return nil, fmt.Errorf("no shortcuts defined in config")
+	// Validate config before processing
+	if err := validateConfig(cfg, configPath, &meta); err != nil {
+		return nil, err
 	}
 
 	// Set default loop interval if not specified
@@ -196,6 +199,7 @@ func loadFromFile(configPath string) (*Config, error) {
 }
 
 // LoadWithOverlays loads the base config and merges overlay configs on top
+// All configs (base + overlays) must be valid or this returns an error
 func LoadWithOverlays(overlays []string) (*Config, error) {
 	base, err := Load()
 	if err != nil {
@@ -205,8 +209,7 @@ func LoadWithOverlays(overlays []string) (*Config, error) {
 	for _, overlayFile := range overlays {
 		overlay, err := loadOverlay(overlayFile)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to load overlay %s: %v\n", overlayFile, err)
-			continue
+			return nil, fmt.Errorf("overlay %s: %w", overlayFile, err)
 		}
 		base.Merge(overlay)
 	}
@@ -244,10 +247,11 @@ func (c *Config) Merge(overlay *Config) {
 	}
 
 	// Rebuild ParsedShortcuts after merge
+	// Note: All shortcuts were already validated, so errors here indicate a bug
 	c.ParsedShortcuts = make(map[string][]*ParsedShortcut)
 	for key, value := range c.Shortcuts {
 		if err := parseShortcutsInto(c.ParsedShortcuts, key, value); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to parse shortcut '%s': %v\n", key, err)
+			panic(fmt.Sprintf("BUG: validated shortcut failed to parse during merge: '%s': %v", key, err))
 		}
 	}
 }
@@ -266,7 +270,14 @@ func loadOverlay(filename string) (*Config, error) {
 		Commands:  make(map[string]string),
 	}
 
-	if _, err := toml.DecodeFile(overlayPath, cfg); err != nil {
+	// Decode with metadata to get line numbers
+	meta, err := toml.DecodeFile(overlayPath, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	// Validate overlay before returning
+	if err := validateConfig(cfg, overlayPath, &meta); err != nil {
 		return nil, err
 	}
 
@@ -474,58 +485,12 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 			shortcut.Timing = TimingPress
 		case "passthrough":
 			shortcut.Passthrough = true
-		// Migration errors for removed syntax
-		case "whileheld":
-			return nil, fmt.Errorf("whileheld removed: use .hold")
-		case "repeat-whileheld":
-			return nil, fmt.Errorf("repeat-whileheld removed: use .hold.repeat")
-		case "repeat-toggle":
-			return nil, fmt.Errorf("repeat-toggle removed: use .onpress.repeat")
-		case "toggle":
-			return nil, fmt.Errorf("toggle removed: use .onpress.repeat")
-		case "tapwhileheld":
-			return nil, fmt.Errorf("tapwhileheld removed: use .taphold")
 		default:
 			return nil, fmt.Errorf("unknown modifier: %s", part)
 		}
 	}
 
-	// Validate combinations
-	if shortcut.Repeat && shortcut.Behavior == BehaviorLongPress {
-		return nil, fmt.Errorf("longpress.repeat is not valid: longpress is one-shot")
-	}
-
-	switch shortcut.Behavior {
-	case BehaviorSwitch:
-		if len(shortcut.Commands) < 2 {
-			return nil, fmt.Errorf("switch behavior requires array of at least 2 commands")
-		}
-	case BehaviorPressRelease:
-		if len(shortcut.Commands) != 2 {
-			return nil, fmt.Errorf("pressrelease behavior requires exactly 2 commands")
-		}
-	case BehaviorHoldRelease:
-		if len(shortcut.Commands) != 2 {
-			return nil, fmt.Errorf("holdrelease behavior requires exactly 2 commands")
-		}
-	case BehaviorTapHold:
-		if len(shortcut.Commands) != 1 {
-			return nil, fmt.Errorf("taphold behavior requires exactly 1 command")
-		}
-	case BehaviorTapLongPress:
-		if len(shortcut.Commands) != 2 {
-			return nil, fmt.Errorf("taplongpress behavior requires exactly 2 commands")
-		}
-	case BehaviorHold:
-		if len(shortcut.Commands) != 1 {
-			return nil, fmt.Errorf("hold behavior requires 1 command; for press+release use .holdrelease")
-		}
-	default:
-		if len(shortcut.Commands) != 1 {
-			return nil, fmt.Errorf("%s behavior requires single command string", behaviorName(shortcut.Behavior))
-		}
-	}
-
+	// Command count validation now happens in validateConfig before ParseShortcut is called
 	return shortcut, nil
 }
 
