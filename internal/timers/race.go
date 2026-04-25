@@ -3,22 +3,60 @@ package timers
 import (
 	"context"
 	"sync"
+
+	"github.com/deprecatedluar/akeyshually/internal/config"
 )
 
-const (
-	PhaseIdle          = 0
-	PhaseHoldWindow    = 1
-	PhaseDoubleTapWindow = 2
-	PhaseTapHoldWindow = 3
-)
+// WinCondition describes the exact state that must hold for a trigger to win.
+type WinCondition struct {
+	Count   int  // number of key-down events required
+	Pressed bool // key must still be held at resolution time
+	Phase   int  // 1 = first timer boundary, 2 = second timer boundary
+}
 
-// ComboState persists across press/release for one combo, driving the sequential chain.
+// Candidate pairs a shortcut with its pre-computed win condition.
+// Switch and immediate-fire shortcuts are excluded — they fire outside the chain.
+type Candidate struct {
+	Shortcut  *config.ParsedShortcut
+	Condition WinCondition
+}
+
+// BuildCandidates maps shortcuts to their win conditions.
+func BuildCandidates(shortcuts []*config.ParsedShortcut) []Candidate {
+	var out []Candidate
+	for _, s := range shortcuts {
+		cond, ok := winConditionFor(s.Behavior)
+		if !ok {
+			continue
+		}
+		out = append(out, Candidate{Shortcut: s, Condition: cond})
+	}
+	return out
+}
+
+func winConditionFor(b config.BehaviorMode) (WinCondition, bool) {
+	switch b {
+	case config.BehaviorNormal:
+		return WinCondition{Count: 1, Pressed: false, Phase: 1}, true
+	case config.BehaviorPressRelease:
+		return WinCondition{Count: 1, Pressed: false, Phase: 1}, true
+	case config.BehaviorHold, config.BehaviorHoldRelease, config.BehaviorLongPress:
+		return WinCondition{Count: 1, Pressed: true, Phase: 1}, true
+	case config.BehaviorDoubleTap:
+		return WinCondition{Count: 2, Pressed: false, Phase: 1}, true
+	case config.BehaviorTapHold, config.BehaviorTapLongPress:
+		return WinCondition{Count: 2, Pressed: true, Phase: 2}, true
+	}
+	return WinCondition{}, false
+}
+
+// ComboState drives the chain goroutine for a single key press.
+// The event handler signals it via channels; the goroutine owns resolution.
 type ComboState struct {
 	sync.Mutex
-	Phase     int
 	cancel    context.CancelFunc
-	ReleaseCh chan struct{} // press → release signal
-	PressCh   chan struct{} // second press signal (doubletap window)
+	ReleaseCh chan struct{} // key released
+	PressCh   chan struct{} // second press arrived (doubletap window)
 }
 
 func NewComboState(cancel context.CancelFunc) *ComboState {
@@ -35,7 +73,6 @@ func (s *ComboState) Cancel() {
 	}
 }
 
-// SignalRelease notifies the chain goroutine that the key was released.
 func (s *ComboState) SignalRelease() {
 	select {
 	case s.ReleaseCh <- struct{}{}:
@@ -43,7 +80,6 @@ func (s *ComboState) SignalRelease() {
 	}
 }
 
-// SignalPress notifies the chain goroutine that a second press arrived.
 func (s *ComboState) SignalPress() {
 	select {
 	case s.PressCh <- struct{}{}:
@@ -51,7 +87,7 @@ func (s *ComboState) SignalPress() {
 	}
 }
 
-// StateMap holds one ComboState per combo.
+// StateMap holds one active ComboState per combo.
 type StateMap struct {
 	mu     sync.Mutex
 	states map[string]*ComboState
