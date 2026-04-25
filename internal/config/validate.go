@@ -3,23 +3,72 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	gohelp "github.com/DeprecatedLuar/gohelp-luar"
 )
 
 // ValidationError holds a single validation failure with file and line context.
 type ValidationError struct {
 	File    string
 	Line    int
+	Key     string
 	Message string
 }
 
 func (e ValidationError) Error() string {
+	msg := fmt.Sprintf("%q: %s", e.Key, e.Message)
 	if e.Line > 0 {
-		return fmt.Sprintf("config error in %s\n  line %d: %s", e.File, e.Line, e.Message)
+		return fmt.Sprintf("config error in %s\n  line %d: %s", e.File, e.Line, msg)
 	}
-	return fmt.Sprintf("config error in %s\n  %s", e.File, e.Message)
+	return fmt.Sprintf("config error in %s\n  %s", e.File, msg)
+}
+
+// ValidationErrors holds multiple validation errors and can format them nicely
+type ValidationErrors struct {
+	Errors []ValidationError
+}
+
+func (ve ValidationErrors) Error() string {
+	if len(ve.Errors) == 0 {
+		return "no validation errors"
+	}
+
+	var parts []string
+	for _, err := range ve.Errors {
+		parts = append(parts, err.Error())
+	}
+	return strings.Join(parts, "\n")
+}
+
+// FormatWithGohelp renders errors using gohelp for visual consistency
+func (ve ValidationErrors) FormatWithGohelp() {
+	if len(ve.Errors) == 0 {
+		return
+	}
+
+	// Group errors by file
+	byFile := make(map[string][]ValidationError)
+	for _, err := range ve.Errors {
+		filename := filepath.Base(err.File)
+		byFile[filename] = append(byFile[filename], err)
+	}
+
+	// Build page with sections per file
+	page := gohelp.NewPage("Config Errors", "")
+
+	for filename, errors := range byFile {
+		var items []gohelp.Entry
+		for _, err := range errors {
+			label := fmt.Sprintf("line %d: %q", err.Line, err.Key)
+			items = append(items, gohelp.Item(label, err.Message))
+		}
+		page = page.Section(filename, items...)
+	}
+
+	gohelp.Run([]string{}, page)
 }
 
 // getLineNumbers parses the TOML file to extract line numbers for shortcut keys
@@ -60,7 +109,7 @@ func getLineNumbers(filePath string) map[string]int {
 // validateConfig validates a parsed Config.
 // Collects all validation errors and returns them together.
 func validateConfig(cfg *Config, filePath string, meta *toml.MetaData) error {
-	var errors []string
+	var errors []ValidationError
 
 	// Build line number map from source file
 	lineNumbers := getLineNumbers(filePath)
@@ -68,12 +117,14 @@ func validateConfig(cfg *Config, filePath string, meta *toml.MetaData) error {
 	for key, value := range cfg.Shortcuts {
 		line := lineNumbers[key]
 		if err := validateShortcutEntry(key, value, filePath, line); err != nil {
-			errors = append(errors, err.Error())
+			if ve, ok := err.(ValidationError); ok {
+				errors = append(errors, ve)
+			}
 		}
 	}
 
 	if len(errors) > 0 {
-		return fmt.Errorf("%s", strings.Join(errors, "\n"))
+		return ValidationErrors{Errors: errors}
 	}
 	return nil
 }
@@ -86,7 +137,8 @@ func validateShortcutEntry(key string, value interface{}, filePath string, line 
 		return ValidationError{
 			File:    filePath,
 			Line:    line,
-			Message: fmt.Sprintf("%q: %v", key, err),
+			Key:     key,
+			Message: err.Error(),
 		}
 	}
 
@@ -95,7 +147,8 @@ func validateShortcutEntry(key string, value interface{}, filePath string, line 
 		return ValidationError{
 			File:    filePath,
 			Line:    line,
-			Message: fmt.Sprintf("%q: %v", key, err),
+			Key:     key,
+			Message: err.Error(),
 		}
 	}
 
