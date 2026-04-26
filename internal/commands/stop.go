@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"syscall"
 
+	daemon "github.com/deprecatedluar/luar-daemonator"
 	"github.com/deprecatedluar/akeyshually/internal"
 )
 
@@ -30,19 +30,12 @@ func Stop() {
 	}
 
 	// Also check for manual daemon and stop it
-	pid, err := internal.GetRunningDaemonPid()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to check daemon status: %v\n", err)
-	} else if pid > 0 {
-		// Send SIGTERM to the process
-		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to stop daemon (PID: %d): %v\n", pid, err)
+	d := daemon.New("akeyshually")
+	if d.IsRunning() {
+		if err := d.Stop(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to stop daemon: %v\n", err)
 		} else {
-			// Remove pidfile
-			if err := internal.RemovePidFile(); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to remove pidfile: %v\n", err)
-			}
-			fmt.Printf("Stopped manual daemon (PID: %d)\n", pid)
+			fmt.Printf("Stopped manual daemon\n")
 			internal.NotifyInfo("akeyshually", "Daemon stopped")
 			stopped = true
 		}

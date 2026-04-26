@@ -1,6 +1,6 @@
 module github.com/deprecatedluar/akeyshually
 
-go 1.25.1
+go 1.25.5
 
 require (
 	github.com/BurntSushi/toml v1.5.0
@@ -9,6 +9,7 @@ require (
 )
 
 require (
+	github.com/deprecatedluar/luar-daemonator v0.0.0-20260422105652-b0a90064bc50 // indirect
 	golang.org/x/sys v0.37.0 // indirect
 	golang.org/x/term v0.36.0 // indirect
 )

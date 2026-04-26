@@ -42,30 +42,6 @@ func handleConfigError(err error) {
 }
 
 func startDaemon(configPath string) {
-	// Check for existing instances
-	pid, err := internal.GetRunningDaemonPid()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to check daemon status: %v\n", err)
-		os.Exit(1)
-	}
-
-	// If we're replacing a specific PID (restart scenario), allow it
-	if pid > 0 {
-		replacingPid := os.Getenv("AKEYSHUALLY_REPLACING")
-		if replacingPid != "" && replacingPid == fmt.Sprintf("%d", pid) {
-			// This is expected - we're replacing the old daemon
-			// It might still be shutting down, just proceed
-		} else {
-			fmt.Fprintf(os.Stderr, "Errm... akeyshually, the daemon is already running (PID: %d)\n", pid)
-			os.Exit(1)
-		}
-	}
-
-	// Write PID file for current process
-	currentPid := os.Getpid()
-	if err := internal.WritePidFile(currentPid); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to write pidfile: %v\n", err)
-	}
 
 	// Only ensure default config exists if not using custom config
 	if configPath == "" {
@@ -77,6 +53,7 @@ func startDaemon(configPath string) {
 
 	// Load config
 	var cfg *config.Config
+	var err error
 	if configPath != "" {
 		// Custom config - no overlays
 		cfg, err = config.LoadFromPath(configPath)
@@ -205,8 +182,6 @@ func startDaemon(configPath string) {
 		for _, pair := range allPairs {
 			internal.Cleanup(pair)
 		}
-		// Clean up pidfile if running as daemon
-		internal.RemovePidFile()
 		os.Exit(0)
 	}()
 

@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"syscall"
 
+	daemon "github.com/deprecatedluar/luar-daemonator"
 	"github.com/deprecatedluar/akeyshually/internal"
 	"github.com/deprecatedluar/akeyshually/internal/config"
 )
 
 func restartIfRunning() {
-	pid, err := internal.GetRunningDaemonPid()
-	if err == nil && pid > 0 {
+	d := daemon.New("akeyshually")
+	if d.IsRunning() {
 		Restart()
 	}
 }
@@ -38,35 +38,10 @@ func Restart() {
 		return
 	}
 
-	// Manual mode: kill old daemon and spawn new one directly
-	// This is the same approach used by config_watcher.go:restartSelf()
-	pid, err := internal.GetRunningDaemonPid()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to check daemon status: %v\n", err)
+	// Manual mode: stop then start
+	d := daemon.New("akeyshually")
+	if err := d.Restart(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to restart daemon: %v\n", err)
 		os.Exit(1)
-	}
-
-	oldPid := pid
-	if pid > 0 {
-		// Kill the old daemon
-		if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to stop daemon: %v\n", err)
-			os.Exit(1)
-		}
-		// Remove stale pidfile
-		internal.RemovePidFile()
-	}
-
-	// Spawn new daemon - pass old PID so it knows to replace it
-	// This tells startDaemon() to ignore "already running" check for that PID
-	newPid, err := internal.SpawnDaemon(oldPid)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to spawn daemon: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Write new pidfile
-	if err := internal.WritePidFile(newPid); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to write pidfile: %v\n", err)
 	}
 }
