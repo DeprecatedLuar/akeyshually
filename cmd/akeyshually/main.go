@@ -11,9 +11,11 @@ import (
 	evdev "github.com/holoplot/go-evdev"
 
 	"github.com/deprecatedluar/akeyshually/internal"
-	"github.com/deprecatedluar/akeyshually/internal/commands/handler"
+	"github.com/deprecatedluar/akeyshually/internal/commands"
+	"github.com/deprecatedluar/akeyshually/internal/common"
 	"github.com/deprecatedluar/akeyshually/internal/config"
 	"github.com/deprecatedluar/akeyshually/internal/executor"
+	"github.com/deprecatedluar/akeyshually/internal/listener"
 	"github.com/deprecatedluar/akeyshually/internal/matcher"
 )
 
@@ -22,9 +24,97 @@ const githubRepo = "DeprecatedLuar/akeyshually"
 var version = "dev"
 
 func main() {
-	result := handler.Parse(os.Args[1:], version, githubRepo)
-	if result.RunForeground {
-		startDaemon(result.ConfigPath)
+	// Process flags first, collect remaining args
+	var remaining []string
+	var configPath string
+
+	for i := 0; i < len(os.Args[1:]); i++ {
+		arg := os.Args[1:][i]
+		switch arg {
+		case "--debug":
+			common.SetDebug(true)
+		case "-c", "--config":
+			if i+1 < len(os.Args[1:]) {
+				configPath = os.Args[1:][i+1]
+				i++ // Skip next arg
+			} else {
+				fmt.Fprintf(os.Stderr, "Error: %s requires a config path\n", arg)
+				os.Exit(1)
+			}
+		default:
+			remaining = append(remaining, arg)
+		}
+	}
+
+	// No command given - run the keyboard listener
+	if len(remaining) == 0 {
+		run(configPath)
+		return
+	}
+
+	// Handle commands
+	command := remaining[0]
+
+	switch command {
+	case "start":
+		commands.Start()
+		os.Exit(0)
+	case "stop":
+		commands.Stop()
+		os.Exit(0)
+	case "restart":
+		commands.Restart()
+		os.Exit(0)
+	case "update":
+		if err := commands.HandleUpdate(version, githubRepo); err != nil {
+			fmt.Fprintf(os.Stderr, "Update failed: %v\n", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	case "enable":
+		if len(remaining) < 2 {
+			fmt.Fprintf(os.Stderr, "Usage: akeyshually enable <file.toml>\n")
+			os.Exit(1)
+		}
+		commands.Enable(remaining[1])
+		os.Exit(0)
+	case "disable":
+		if len(remaining) < 2 {
+			fmt.Fprintf(os.Stderr, "Usage: akeyshually disable <file.toml>\n")
+			os.Exit(1)
+		}
+		commands.Disable(remaining[1])
+		os.Exit(0)
+	case "list", "ls":
+		commands.List()
+		os.Exit(0)
+	case "clear":
+		commands.Clear()
+		os.Exit(0)
+	case "config", "conf", "edit":
+		filename := ""
+		if len(remaining) > 1 {
+			filename = remaining[1]
+		}
+		commands.Config(filename)
+		os.Exit(0)
+	case "-e":
+		filename := ""
+		if len(remaining) > 1 {
+			filename = remaining[1]
+		}
+		commands.Config(filename)
+		os.Exit(0)
+	case "help", "-h", "--help":
+		commands.Help(remaining[1:]...)
+		os.Exit(0)
+	case "version", "-v", "--version":
+		commands.Version(version)
+		os.Exit(0)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", command)
+		commands.Help()
+		os.Exit(1)
 	}
 }
 
@@ -37,11 +127,11 @@ func handleConfigError(err error) {
 		// Fallback for other config errors
 		fmt.Fprintf(os.Stderr, "Config error: %v\n", err)
 	}
-	internal.NotifyError("akeyshually startup failed", fmt.Sprintf("Config error: %v", err))
+	common.NotifyError("akeyshually startup failed", fmt.Sprintf("Config error: %v", err))
 	os.Exit(1)
 }
 
-func startDaemon(configPath string) {
+func run(configPath string) {
 
 	// Only ensure default config exists if not using custom config
 	if configPath == "" {
@@ -76,22 +166,22 @@ func startDaemon(configPath string) {
 		}
 	}
 
-	keyboardPairs, err := internal.FindKeyboards()
+	keyboardPairs, err := listener.FindKeyboards()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Keyboard detection error: %v\n", err)
-		internal.NotifyError("akeyshually startup failed", fmt.Sprintf("Keyboard detection error: %v", err))
+		common.NotifyError("akeyshually startup failed", fmt.Sprintf("Keyboard detection error: %v", err))
 		os.Exit(1)
 	}
 
 	if len(keyboardPairs) == 0 {
 		fmt.Fprintf(os.Stderr, "No keyboards detected\n")
-		internal.NotifyError("akeyshually startup failed", "No keyboards detected")
+		common.NotifyError("akeyshually startup failed", "No keyboards detected")
 		os.Exit(1)
 	}
 
-	var declaredPairs []internal.KeyboardPair
+	var declaredPairs []listener.KeyboardPair
 	if len(cfg.Settings.Devices) > 0 {
-		declaredPairs, err = internal.FindDeclaredDevices(cfg.Settings.Devices)
+		declaredPairs, err = listener.FindDeclaredDevices(cfg.Settings.Devices)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: declared device error: %v\n", err)
 		}
@@ -108,7 +198,7 @@ func startDaemon(configPath string) {
 
 	// Create shared tap state and detect mice (if tap shortcuts exist)
 	var tapState *matcher.TapState
-	mice, err := internal.FindMice()
+	mice, err := listener.FindMice()
 	if err == nil && len(mice) > 0 {
 		tapState = matcher.NewTapState()
 		m.SetTapState(tapState)
@@ -117,7 +207,7 @@ func startDaemon(configPath string) {
 	}
 
 	// Create shared key injector for remap output
-	injector, err := internal.CreateKeyInjector()
+	injector, err := listener.CreateKeyInjector()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create key injector: %v\n", err)
 		os.Exit(1)
@@ -137,10 +227,10 @@ func startDaemon(configPath string) {
 	for _, pair := range keyboardPairs {
 		wg.Add(1)
 		name, _ := pair.Physical.Name()
-		go func(p internal.KeyboardPair, devName string) {
+		go func(p listener.KeyboardPair, devName string) {
 			defer wg.Done()
 			handler := internal.CreateUnifiedHandler(m, cfg, loopState, injector, p.Virtual)
-			if err := internal.ListenWithReconnect(p, handler, internal.FindKeyboards, devName); err != nil {
+			if err := listener.ListenWithReconnect(p, handler, listener.FindKeyboards, devName); err != nil {
 				fmt.Fprintf(os.Stderr, "Listener error: %v\n", err)
 			}
 		}(pair, name)
@@ -151,11 +241,11 @@ func startDaemon(configPath string) {
 	for _, pair := range declaredPairs {
 		wg.Add(1)
 		name, _ := pair.Physical.Name()
-		go func(p internal.KeyboardPair, devName string) {
+		go func(p listener.KeyboardPair, devName string) {
 			defer wg.Done()
 			handler := internal.CreateUnifiedHandler(m, cfg, loopState, injector, p.Virtual)
-			if err := internal.ListenWithReconnect(p, handler, func() ([]internal.KeyboardPair, error) {
-				return internal.FindDeclaredDevices(declaredDeviceNames)
+			if err := listener.ListenWithReconnect(p, handler, func() ([]listener.KeyboardPair, error) {
+				return listener.FindDeclaredDevices(declaredDeviceNames)
 			}, devName); err != nil {
 				fmt.Fprintf(os.Stderr, "Listener error: %v\n", err)
 			}
@@ -168,7 +258,7 @@ func startDaemon(configPath string) {
 			wg.Add(1)
 			go func(dev evdev.InputDevice) {
 				defer wg.Done()
-				if err := internal.ListenMouse(&dev, tapState.Clear); err != nil {
+				if err := listener.ListenMouse(&dev, tapState.Clear); err != nil {
 					fmt.Fprintf(os.Stderr, "Mouse listener error: %v\n", err)
 				}
 			}(*mouse)
@@ -180,7 +270,7 @@ func startDaemon(configPath string) {
 		<-sigChan
 		fmt.Fprintf(os.Stderr, "\nShutting down...\n")
 		for _, pair := range allPairs {
-			internal.Cleanup(pair)
+			listener.Cleanup(pair)
 		}
 		os.Exit(0)
 	}()
