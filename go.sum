@@ -6,6 +6,8 @@ github.com/DeprecatedLuar/gohelp-luar v0.2.1 h1:sBEDPw4c4NQ2IwW15GbXqupTKpt35u85
 github.com/DeprecatedLuar/gohelp-luar v0.2.1/go.mod h1:Cyu+2LWntqOPywRtAZHADj8EgOe+R3s0+hjjp5XHOow=
 github.com/DeprecatedLuar/gohelp-luar v0.2.2 h1:kFnHgWndFY7dQ4SmJYjF+bjRELTuoBUVb2QVRfsHD4Q=
 github.com/DeprecatedLuar/gohelp-luar v0.2.2/go.mod h1:Cyu+2LWntqOPywRtAZHADj8EgOe+R3s0+hjjp5XHOow=
+github.com/deprecatedluar/luar-daemonator v0.0.0-20260422105652-b0a90064bc50 h1:Jg+/EvhLeHz9OWShyYmyoykUeg0v7+eTWJv7LX6f+HA=
+github.com/deprecatedluar/luar-daemonator v0.0.0-20260422105652-b0a90064bc50/go.mod h1:HdL0bvxXHSqhDek1G3cc23sjsur71gHIEleAxqfOlJw=
 github.com/holoplot/go-evdev v0.0.0-20250804134636-ab1d56a1fe83 h1:B+A58zGFuDrvEZpPN+yS6swJA0nzqgZvDzgl/OPyefU=
 github.com/holoplot/go-evdev v0.0.0-20250804134636-ab1d56a1fe83/go.mod h1:iHAf8OIncO2gcQ8XOjS7CMJ2aPbX2Bs0wl5pZyanEqk=
 golang.org/x/sys v0.37.0 h1:fdNQudmxPjkdUTPnLn5mdQv7Zwvbvpaxqs831goi9kQ=
