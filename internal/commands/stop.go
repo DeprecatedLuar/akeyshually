@@ -6,7 +6,7 @@ import (
 	"os/exec"
 
 	daemon "github.com/deprecatedluar/luar-daemonator"
-	"github.com/deprecatedluar/akeyshually/internal"
+	"github.com/deprecatedluar/akeyshually/internal/common"
 )
 
 // Stop implements the stop command
@@ -15,7 +15,7 @@ func Stop() {
 	stopped := false
 
 	// Stop systemd service if active
-	hasService, err := internal.HasSystemdService()
+	hasService, err := common.HasSystemdService()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to check systemd service: %v\n", err)
 	} else if hasService {
@@ -24,7 +24,7 @@ func Stop() {
 			fmt.Fprintf(os.Stderr, "Failed to stop systemd service: %v\n", err)
 		} else {
 			fmt.Println("Stopped systemd service")
-			internal.NotifyInfo("akeyshually", "Daemon stopped")
+			common.NotifyInfo("akeyshually", "Daemon stopped")
 			stopped = true
 		}
 	}
@@ -36,7 +36,7 @@ func Stop() {
 			fmt.Fprintf(os.Stderr, "Failed to stop daemon: %v\n", err)
 		} else {
 			fmt.Printf("Stopped manual daemon\n")
-			internal.NotifyInfo("akeyshually", "Daemon stopped")
+			common.NotifyInfo("akeyshually", "Daemon stopped")
 			stopped = true
 		}
 	}

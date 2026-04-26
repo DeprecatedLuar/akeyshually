@@ -1,4 +1,4 @@
-package internal
+package listener
 
 import (
 	"fmt"
@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/deprecatedluar/akeyshually/internal/common"
 	"github.com/deprecatedluar/akeyshually/internal/matcher"
 	evdev "github.com/holoplot/go-evdev"
 )
@@ -15,8 +16,8 @@ const (
 	reconnectMaxAttempts = 30
 	reconnectInterval    = 2 * time.Second
 
-	virtualDeviceSuffix = " (" + appName + ")"
-	injectorDeviceName  = appName + "-injector"
+	virtualDeviceSuffix = " (" + common.AppName + ")"
+	injectorDeviceName  = common.AppName + "-injector"
 	injectorKeyCount    = 255
 	injectorBusType     = 0x03
 	injectorVendorID    = 0x0001
@@ -43,7 +44,7 @@ func FindKeyboards() ([]KeyboardPair, error) {
 	var keyboards []*evdev.InputDevice
 	var buttonDevices []*evdev.InputDevice
 
-	LogDebug("Scanning %d input devices...", len(paths))
+	common.LogDebug("Scanning %d input devices...", len(paths))
 
 	for _, path := range paths {
 		dev, err := evdev.Open(path.Path)
@@ -54,7 +55,7 @@ func FindKeyboards() ([]KeyboardPair, error) {
 		name, _ := dev.Name()
 
 		// Skip our own virtual keyboards
-		if strings.Contains(strings.ToLower(name), appName) {
+		if strings.Contains(strings.ToLower(name), common.AppName) {
 			dev.Close()
 			continue
 		}
@@ -63,7 +64,7 @@ func FindKeyboards() ([]KeyboardPair, error) {
 		if isRemapperVirtual(dev) {
 			hasKey := hasKeyCapability(dev)
 			hasAlpha := hasAlphabetKeys(dev)
-			LogDebug("Found remapper: %s (hasKey=%v, hasAlpha=%v)", name, hasKey, hasAlpha)
+			common.LogDebug("Found remapper: %s (hasKey=%v, hasAlpha=%v)", name, hasKey, hasAlpha)
 			if hasKey && hasAlpha {
 				remappers = append(remappers, dev)
 				continue
@@ -72,14 +73,14 @@ func FindKeyboards() ([]KeyboardPair, error) {
 
 		// Button devices (phone hardware buttons, media keys)
 		if isButtonDevice(dev) {
-			LogDebug("Found button device: %s", name)
+			common.LogDebug("Found button device: %s", name)
 			buttonDevices = append(buttonDevices, dev)
 			continue
 		}
 
 		// Physical keyboards need EV_REP
 		if isKeyboard(dev) {
-			LogDebug("Found physical keyboard: %s", name)
+			common.LogDebug("Found physical keyboard: %s", name)
 			keyboards = append(keyboards, dev)
 			continue
 		}
@@ -249,8 +250,8 @@ func Listen(pair KeyboardPair, handler KeyHandler) error {
 			}
 		} else {
 			// Forward all non-key events immediately
-			if event.Type == evdev.EV_ABS && IsLoggingEnabled() {
-				LogKey(matcher.GetAbsName(uint16(event.Code)), uint16(event.Code))
+			if event.Type == evdev.EV_ABS && common.IsLoggingEnabled() {
+				common.LogKey(matcher.GetAbsName(uint16(event.Code)), uint16(event.Code))
 			}
 			pair.Virtual.WriteOne(event)
 		}
@@ -282,7 +283,7 @@ func FindDeclaredDevices(matches []string) ([]KeyboardPair, error) {
 		nameLower := strings.ToLower(name)
 
 		// Skip our own virtual devices
-		if strings.Contains(nameLower, appName) {
+		if strings.Contains(nameLower, common.AppName) {
 			dev.Close()
 			continue
 		}
@@ -301,7 +302,7 @@ func FindDeclaredDevices(matches []string) ([]KeyboardPair, error) {
 			continue
 		}
 
-		LogDebug("Found declared device: %s", name)
+		common.LogDebug("Found declared device: %s", name)
 
 		if err := dev.Grab(); err != nil {
 			fmt.Fprintf(os.Stderr, "[WARN] Failed to grab %s: %v\n", name, err)
@@ -338,7 +339,7 @@ func ListenWithReconnect(pair KeyboardPair, handler KeyHandler, findFn func() ([
 		}
 
 		Cleanup(pair)
-		LogDebug("Device %q disconnected, attempting reconnect...", deviceName)
+		common.LogDebug("Device %q disconnected, attempting reconnect...", deviceName)
 
 		var newPair *KeyboardPair
 		for attempt := 1; attempt <= reconnectMaxAttempts; attempt++ {
@@ -346,7 +347,7 @@ func ListenWithReconnect(pair KeyboardPair, handler KeyHandler, findFn func() ([
 
 			pairs, err := findFn()
 			if err != nil {
-				LogDebug("Reconnect attempt %d/%d: %v", attempt, reconnectMaxAttempts, err)
+				common.LogDebug("Reconnect attempt %d/%d: %v", attempt, reconnectMaxAttempts, err)
 				continue
 			}
 
@@ -363,7 +364,7 @@ func ListenWithReconnect(pair KeyboardPair, handler KeyHandler, findFn func() ([
 			if newPair != nil {
 				break
 			}
-			LogDebug("Reconnect attempt %d/%d: %q not found", attempt, reconnectMaxAttempts, deviceName)
+			common.LogDebug("Reconnect attempt %d/%d: %q not found", attempt, reconnectMaxAttempts, deviceName)
 		}
 
 		if newPair == nil {
@@ -395,7 +396,7 @@ func FindMice() ([]*evdev.InputDevice, error) {
 		nameLower := strings.ToLower(name)
 
 		// Skip virtual keyboards we created
-		if strings.Contains(nameLower, appName) {
+		if strings.Contains(nameLower, common.AppName) {
 			dev.Close()
 			continue
 		}
@@ -408,7 +409,7 @@ func FindMice() ([]*evdev.InputDevice, error) {
 
 		// Mice have EV_KEY + mouse buttons but no EV_REP
 		if isMouse(dev) {
-			LogDebug("Found mouse: %s", name)
+			common.LogDebug("Found mouse: %s", name)
 			mice = append(mice, dev)
 			continue
 		}

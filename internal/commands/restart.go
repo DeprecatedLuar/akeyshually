@@ -6,7 +6,7 @@ import (
 	"os/exec"
 
 	daemon "github.com/deprecatedluar/luar-daemonator"
-	"github.com/deprecatedluar/akeyshually/internal"
+	"github.com/deprecatedluar/akeyshually/internal/common"
 	"github.com/deprecatedluar/akeyshually/internal/config"
 )
 
@@ -19,7 +19,7 @@ func restartIfRunning() {
 
 func notifyOverlayChange(message string) {
 	if cfg, err := config.Load(); err == nil && cfg.Settings.NotifyOnOverlayChange {
-		internal.NotifyInfo("akeyshually", message)
+		common.NotifyInfo("akeyshually", message)
 	}
 }
 
@@ -27,7 +27,7 @@ func notifyOverlayChange(message string) {
 // Stops the daemon and then starts it again (silent operation)
 func Restart() {
 	// Check if daemon is running via systemd
-	hasService, err := internal.HasSystemdService()
+	hasService, err := common.HasSystemdService()
 	if err == nil && hasService {
 		// Let systemd handle the restart
 		cmd := exec.Command("systemctl", "--user", "restart", "akeyshually")

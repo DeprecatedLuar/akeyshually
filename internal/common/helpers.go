@@ -1,11 +1,11 @@
-package internal
+package common
 
 import (
 	"os/exec"
 )
 
 const (
-	appName           = "akeyshually"
+	AppName           = "akeyshually"
 	notifySendBin     = "notify-send"
 	notifyUrgencyCrit = "critical"
 	notifyUrgencyNorm = "normal"
@@ -14,13 +14,13 @@ const (
 // NotifyError sends a desktop notification for critical errors
 // Fails silently if notify-send is not available
 func NotifyError(title, message string) {
-	cmd := exec.Command(notifySendBin, "-u", notifyUrgencyCrit, "-a", appName, title, message)
+	cmd := exec.Command(notifySendBin, "-u", notifyUrgencyCrit, "-a", AppName, title, message)
 	cmd.Run() // Fire and forget
 }
 
 // NotifyInfo sends a desktop notification for informational messages
 func NotifyInfo(title, message string) {
-	cmd := exec.Command(notifySendBin, "-u", notifyUrgencyNorm, "-a", appName, title, message)
+	cmd := exec.Command(notifySendBin, "-u", notifyUrgencyNorm, "-a", AppName, title, message)
 	cmd.Run() // Fire and forget
 }
 
