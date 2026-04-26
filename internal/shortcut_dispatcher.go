@@ -374,15 +374,26 @@ func buildTimerLadder(candidates []timers.Candidate, defaultInterval float64) []
 	for _, c := range candidates {
 		interval := intervalOrDefault(c.Shortcut.Interval, defaultInterval)
 
+		// Doubletap wins at Phase 0 but needs a Phase 1 timer for its window
+		if c.Shortcut.Behavior == config.BehaviorDoubleTap {
+			if existing, ok := thresholds[1]; !ok || ms(interval) > existing {
+				thresholds[1] = ms(interval)
+			}
+		}
+
 		// Only add Phase 1 threshold if candidate needs it
 		if c.Condition.Phase >= 1 {
-			thresholds[1] = ms(interval)
+			if existing, ok := thresholds[1]; !ok || ms(interval) > existing {
+				thresholds[1] = ms(interval)
+			}
 		}
 
 		// Phase 2 threshold (for taphold/taplongpress)
 		if c.Condition.Phase == 2 {
 			holdInterval := intervalOrDefault(c.Shortcut.HoldInterval, defaultInterval)
-			thresholds[2] = ms(holdInterval)
+			if existing, ok := thresholds[2]; !ok || ms(holdInterval) > existing {
+				thresholds[2] = ms(holdInterval)
+			}
 		}
 	}
 
