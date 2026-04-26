@@ -13,6 +13,7 @@ import (
 	"github.com/deprecatedluar/akeyshually/internal"
 	"github.com/deprecatedluar/akeyshually/internal/commands/handler"
 	"github.com/deprecatedluar/akeyshually/internal/config"
+	"github.com/deprecatedluar/akeyshually/internal/executor"
 	"github.com/deprecatedluar/akeyshually/internal/matcher"
 )
 
@@ -147,7 +148,7 @@ func startDaemon(configPath string) {
 	defer evdev.DestroyDevice(injector)
 
 	// Create shared loop state
-	loopState := internal.NewLoopState()
+	loopState := executor.NewLoopState()
 
 	// Signal handling for cleanup
 	sigChan := make(chan os.Signal, 1)
@@ -161,7 +162,7 @@ func startDaemon(configPath string) {
 		name, _ := pair.Physical.Name()
 		go func(p internal.KeyboardPair, devName string) {
 			defer wg.Done()
-			handler := internal.CreateUnifiedHandler(m, cfg, loopState, injector)
+			handler := internal.CreateUnifiedHandler(m, cfg, loopState, injector, p.Virtual)
 			if err := internal.ListenWithReconnect(p, handler, internal.FindKeyboards, devName); err != nil {
 				fmt.Fprintf(os.Stderr, "Listener error: %v\n", err)
 			}
@@ -175,7 +176,7 @@ func startDaemon(configPath string) {
 		name, _ := pair.Physical.Name()
 		go func(p internal.KeyboardPair, devName string) {
 			defer wg.Done()
-			handler := internal.CreateUnifiedHandler(m, cfg, loopState, injector)
+			handler := internal.CreateUnifiedHandler(m, cfg, loopState, injector, p.Virtual)
 			if err := internal.ListenWithReconnect(p, handler, func() ([]internal.KeyboardPair, error) {
 				return internal.FindDeclaredDevices(declaredDeviceNames)
 			}, devName); err != nil {

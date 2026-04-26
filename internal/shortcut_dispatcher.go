@@ -4,52 +4,21 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/deprecatedluar/akeyshually/internal/config"
+	"github.com/deprecatedluar/akeyshually/internal/executor"
 	"github.com/deprecatedluar/akeyshually/internal/matcher"
 	"github.com/deprecatedluar/akeyshually/internal/timers"
 	evdev "github.com/holoplot/go-evdev"
 )
 
-// LoopState tracks active repeat loops and sustained processes across key events.
-type LoopState struct {
-	mu             sync.Mutex
-	active         map[string]context.CancelFunc // repeat loops
-	heldProcesses  map[string]*exec.Cmd          // sustained whileheld processes
-	heldKeys       map[string][]uint16           // sustained remap hold keys
-	persistentHeld map[string][]uint16           // >> persistent remap keys
-}
-
-func NewLoopState() *LoopState {
-	return &LoopState{
-		active:         make(map[string]context.CancelFunc),
-		heldProcesses:  make(map[string]*exec.Cmd),
-		heldKeys:       make(map[string][]uint16),
-		persistentHeld: make(map[string][]uint16),
-	}
-}
-
-func runTickerLoop(ctx context.Context, interval float64, fn func()) {
-	ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			fn()
-		}
-	}
-}
-
 // EmittedModifierTracker tracks which modifiers we've emitted to system (so we can release them)
 type EmittedModifierTracker struct {
-	mu       sync.Mutex
-	emitted  map[string]bool // modifier name -> emitted state
+	mu      sync.Mutex
+	emitted map[string]bool // modifier name -> emitted state
 }
 
 func NewEmittedModifierTracker() *EmittedModifierTracker {
@@ -76,7 +45,7 @@ func (t *EmittedModifierTracker) ClearEmitted(keyName string) {
 	delete(t.emitted, keyName)
 }
 
-func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *LoopState, virtual *evdev.InputDevice) KeyHandler {
+func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *executor.LoopState, injector *evdev.InputDevice, virtual *evdev.InputDevice) KeyHandler {
 	stateMap := timers.NewStateMap()
 	emittedTracker := NewEmittedModifierTracker()
 	return func(code uint16, value int32) bool {
@@ -84,16 +53,16 @@ func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *Loo
 			return false
 		}
 		if value == 1 {
-			return handlePress(code, m, cfg, loopState, virtual, stateMap, emittedTracker)
+			return handlePress(code, value, m, cfg, loopState, injector, virtual, stateMap, emittedTracker)
 		}
 		if value == 0 {
-			return handleRelease(code, m, cfg, loopState, virtual, stateMap, emittedTracker)
+			return handleRelease(code, value, m, cfg, loopState, injector, virtual, stateMap, emittedTracker)
 		}
 		return false
 	}
 }
 
-func handlePress(code uint16, m *matcher.Matcher, cfg *config.Config, loopState *LoopState, virtual *evdev.InputDevice, stateMap *timers.StateMap, emittedTracker *EmittedModifierTracker) bool {
+func handlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Config, loopState *executor.LoopState, injector *evdev.InputDevice, virtual *evdev.InputDevice, stateMap *timers.StateMap, emittedTracker *EmittedModifierTracker) bool {
 	LogKey(matcher.GetKeyName(code), code)
 	m.ClearTapCandidate()
 
@@ -206,11 +175,11 @@ func handlePress(code uint16, m *matcher.Matcher, cfg *config.Config, loopState 
 	ctx, cancel := context.WithCancel(context.Background())
 	state := timers.NewComboState(cancel)
 	stateMap.Set(combo, state)
-	go runLadder(ctx, state, combo, candidates, cfg, loopState, virtual, modifiers, stateMap, emittedTracker)
+	go runLadder(ctx, state, combo, code, value, candidates, cfg, loopState, injector, virtual, modifiers, stateMap, emittedTracker)
 	return true
 }
 
-func handleRelease(code uint16, m *matcher.Matcher, cfg *config.Config, loopState *LoopState, virtual *evdev.InputDevice, stateMap *timers.StateMap, emittedTracker *EmittedModifierTracker) bool {
+func handleRelease(code uint16, value int32, m *matcher.Matcher, cfg *config.Config, loopState *executor.LoopState, injector *evdev.InputDevice, virtual *evdev.InputDevice, stateMap *timers.StateMap, emittedTracker *EmittedModifierTracker) bool {
 	if matcher.IsModifierKey(code) {
 		combo := matcher.GetKeyName(code)
 		LogDebug("Modifier %s released", combo)
@@ -219,7 +188,16 @@ func handleRelease(code uint16, m *matcher.Matcher, cfg *config.Config, loopStat
 			resolvedCmd := cfg.ResolveCommand(command)
 			LogMatch(combo+".tap", fmt.Sprintf("%d", code))
 			LogTrigger(resolvedCmd)
-			Execute(resolvedCmd, cfg)
+			ctx := executor.ExecContext{
+				KeyCode:   code,
+				Value:     value,
+				Virtual:   virtual,
+				Injector:  injector,
+				Modifiers: m.GetCurrentModifiers(),
+				Config:    cfg,
+				LoopState: loopState,
+			}
+			executor.Run(resolvedCmd, ctx)
 		}
 		m.UpdateModifierState(code, false)
 
@@ -251,7 +229,7 @@ func handleRelease(code uint16, m *matcher.Matcher, cfg *config.Config, loopStat
 
 	// No active goroutine - stop any sustained processes
 	stopLoop(combo, loopState)
-	stopHeldProcess(combo, loopState, virtual)
+	stopHeldProcess(combo, loopState, injector)
 	return false
 }
 
@@ -261,9 +239,12 @@ func runLadder(
 	ctx context.Context,
 	state *timers.ComboState,
 	combo string,
+	keyCode uint16,
+	value int32,
 	candidates []timers.Candidate,
 	cfg *config.Config,
-	loopState *LoopState,
+	loopState *executor.LoopState,
+	injector *evdev.InputDevice,
 	virtual *evdev.InputDevice,
 	modifiers matcher.ModifierState,
 	stateMap *timers.StateMap,
@@ -320,7 +301,7 @@ func runLadder(
 				if timer != nil {
 					timer.Stop()
 				}
-				fireWinner(combo, winner, cfg, loopState, virtual, modifiers, ctx, state)
+				fireWinner(combo, keyCode, value, winner, cfg, loopState, injector, virtual, modifiers, ctx, state)
 				return
 			}
 
@@ -344,7 +325,7 @@ func runLadder(
 				if timer != nil {
 					timer.Stop()
 				}
-				fireWinner(combo, winner, cfg, loopState, virtual, modifiers, ctx, state)
+				fireWinner(combo, keyCode, value, winner, cfg, loopState, injector, virtual, modifiers, ctx, state)
 				return
 			}
 
@@ -358,7 +339,7 @@ func runLadder(
 
 			// Check for winner
 			if winner := checkWinner(candidates, count, pressed, phase); winner != nil {
-				fireWinner(combo, winner, cfg, loopState, virtual, modifiers, ctx, state)
+				fireWinner(combo, keyCode, value, winner, cfg, loopState, injector, virtual, modifiers, ctx, state)
 				return
 			}
 
@@ -447,8 +428,8 @@ func checkWinner(candidates []timers.Candidate, count int, pressed bool, phase i
 	for i := range candidates {
 		c := &candidates[i]
 		if c.Condition.Count == count &&
-		   c.Condition.Pressed == pressed &&
-		   c.Condition.Phase <= phase {
+			c.Condition.Pressed == pressed &&
+			c.Condition.Phase <= phase {
 			return c
 		}
 	}
@@ -458,9 +439,12 @@ func checkWinner(candidates []timers.Candidate, count int, pressed bool, phase i
 // fireWinner executes the winning candidate's shortcut
 func fireWinner(
 	combo string,
+	keyCode uint16,
+	value int32,
 	winner *timers.Candidate,
 	cfg *config.Config,
-	loopState *LoopState,
+	loopState *executor.LoopState,
+	injector *evdev.InputDevice,
 	virtual *evdev.InputDevice,
 	modifiers matcher.ModifierState,
 	ctx context.Context,
@@ -468,13 +452,26 @@ func fireWinner(
 ) {
 	s := winner.Shortcut
 
+	// Build execution context
+	execCtx := executor.ExecContext{
+		KeyCode:   keyCode,
+		Value:     value,
+		Virtual:   virtual,
+		Injector:  injector,
+		Modifiers: modifiers,
+		Config:    cfg,
+		LoopState: loopState,
+	}
+
 	switch s.Behavior {
 	case config.BehaviorNormal:
 		LogMatch(combo, combo)
 		if s.Repeat {
 			toggleLoopDirect(combo, s, cfg, loopState)
 		} else {
-			executeShortcutWithState(s, cfg, virtual, modifiers, loopState)
+			resolvedCmd := cfg.ResolveCommand(s.Commands[0])
+			LogTrigger(resolvedCmd)
+			executor.Run(resolvedCmd, execCtx)
 		}
 
 	case config.BehaviorPressRelease:
@@ -482,19 +479,20 @@ func fireWinner(
 		if s.Commands[0] != "" {
 			resolvedCmd := cfg.ResolveCommand(s.Commands[0])
 			LogTrigger(resolvedCmd)
-			Execute(resolvedCmd, cfg)
+			executor.Run(resolvedCmd, execCtx)
 		}
 		// 10ms gap between press and release commands
 		time.AfterFunc(10*time.Millisecond, func() {
 			if s.Commands[1] != "" {
 				resolvedCmd := cfg.ResolveCommand(s.Commands[1])
 				LogTrigger(resolvedCmd)
-				Execute(resolvedCmd, cfg)
+				executor.Run(resolvedCmd, execCtx)
 			}
 		})
 
 	case config.BehaviorHold, config.BehaviorLongPress:
 		LogMatch(combo+".hold", combo)
+		resolvedCmd := cfg.ResolveCommand(s.Commands[0])
 		if s.Repeat {
 			startLoop(combo, s, cfg, loopState)
 			select {
@@ -502,17 +500,17 @@ func fireWinner(
 			case <-state.ReleaseCh:
 			}
 			stopLoop(combo, loopState)
-		} else if s.IsRemap {
-			startHeldProcess(combo, s, cfg, loopState, virtual, modifiers)
+		} else if strings.HasPrefix(resolvedCmd, ">>") {
+			// Remap hold forever - needs special lifecycle management
+			startHeldProcess(combo, s, cfg, loopState, injector, modifiers)
 			select {
 			case <-ctx.Done():
 			case <-state.ReleaseCh:
 			}
-			stopHeldProcess(combo, loopState, virtual)
+			stopHeldProcess(combo, loopState, injector)
 		} else {
-			resolvedCmd := cfg.ResolveCommand(s.Commands[0])
 			LogTrigger(resolvedCmd)
-			Execute(resolvedCmd, cfg)
+			executor.Run(resolvedCmd, execCtx)
 			// For longpress, exit immediately
 			if s.Behavior != config.BehaviorLongPress {
 				select {
@@ -527,7 +525,7 @@ func fireWinner(
 		if s.Commands[0] != "" {
 			resolvedCmd := cfg.ResolveCommand(s.Commands[0])
 			LogTrigger(resolvedCmd)
-			Execute(resolvedCmd, cfg)
+			executor.Run(resolvedCmd, execCtx)
 		}
 		select {
 		case <-ctx.Done():
@@ -537,47 +535,47 @@ func fireWinner(
 			resolvedCmd := cfg.ResolveCommand(s.Commands[1])
 			LogMatch(combo+".holdrelease.release", combo)
 			LogTrigger(resolvedCmd)
-			Execute(resolvedCmd, cfg)
+			executor.Run(resolvedCmd, execCtx)
 		}
 
 	case config.BehaviorDoubleTap:
-		fire(combo+".doubletap", s.Commands[0], cfg)
+		fire(combo+".doubletap", s.Commands[0], cfg, execCtx)
 
 	case config.BehaviorTapHold:
 		LogMatch(combo+".taphold", combo)
 		resolvedCmd := cfg.ResolveCommand(s.Commands[0])
 		LogTrigger(resolvedCmd)
-		cmd := ExecuteTracked(resolvedCmd, cfg)
+		cmd := executor.ExecuteTracked(resolvedCmd, cfg)
 		if cmd != nil {
-			loopState.mu.Lock()
-			loopState.heldProcesses[combo] = cmd
-			loopState.mu.Unlock()
+			loopState.Mu.Lock()
+			loopState.HeldProcesses[combo] = cmd
+			loopState.Mu.Unlock()
 		}
 		select {
 		case <-ctx.Done():
 		case <-state.ReleaseCh:
 		}
-		loopState.mu.Lock()
-		if c, exists := loopState.heldProcesses[combo]; exists {
-			StopProcess(c)
-			delete(loopState.heldProcesses, combo)
+		loopState.Mu.Lock()
+		if c, exists := loopState.HeldProcesses[combo]; exists {
+			executor.StopProcess(c)
+			delete(loopState.HeldProcesses, combo)
 		}
-		loopState.mu.Unlock()
+		loopState.Mu.Unlock()
 
 	case config.BehaviorTapLongPress:
 		LogMatch(combo+".taplongpress", combo)
 		resolvedCmd := cfg.ResolveCommand(s.Commands[1])
 		LogTrigger(resolvedCmd)
-		Execute(resolvedCmd, cfg)
+		executor.Run(resolvedCmd, execCtx)
 	}
 }
 
 // fire is a helper for simple one-shot command execution with logging.
-func fire(label, command string, cfg *config.Config) {
+func fire(label, command string, cfg *config.Config, execCtx executor.ExecContext) {
 	resolvedCmd := cfg.ResolveCommand(command)
 	LogMatch(label, label)
 	LogTrigger(resolvedCmd)
-	Execute(resolvedCmd, cfg)
+	executor.Run(resolvedCmd, execCtx)
 }
 
 // ms converts float64 milliseconds to time.Duration.
@@ -594,111 +592,74 @@ func intervalOrDefault(interval, def float64) float64 {
 
 // --- Loop and process management ---
 
-func executeShortcutWithState(shortcut *config.ParsedShortcut, cfg *config.Config, virtual *evdev.InputDevice, heldModifiers matcher.ModifierState, loopState *LoopState) {
-	if shortcut.IsRemap {
-		if virtual == nil {
-			fmt.Fprintf(os.Stderr, "Remap error: no virtual device available\n")
-			return
-		}
-		switch shortcut.RemapMode {
-		case config.RemapTap:
-			LogTrigger(">" + shortcut.RemapCombo)
-			if err := EmitKeyCombo(virtual, shortcut.RemapCombo, heldModifiers); err != nil {
-				fmt.Fprintf(os.Stderr, "Remap error: %v\n", err)
-			}
-		case config.RemapHoldForever:
-			if loopState == nil {
-				fmt.Fprintf(os.Stderr, "Remap error: >> requires loopState\n")
-				return
-			}
-			LogTrigger(">>" + shortcut.RemapCombo)
-			loopState.mu.Lock()
-			codes := EmitKeysDown(virtual, shortcut.RemapCombo, heldModifiers)
-			if len(codes) > 0 {
-				loopState.persistentHeld[shortcut.RemapCombo] = codes
-			}
-			loopState.mu.Unlock()
-		case config.RemapKeyUp:
-			LogTrigger("<" + shortcut.RemapCombo)
-			code, ok := matcher.ResolveKeyCode(shortcut.RemapCombo)
-			if !ok {
-				fmt.Fprintf(os.Stderr, "Remap error: unknown key %q\n", shortcut.RemapCombo)
-				return
-			}
-			EmitKeysUp(virtual, []uint16{code})
-		case config.RemapReleaseAll:
-			if loopState == nil {
-				return
-			}
-			LogTrigger("<<")
-			loopState.mu.Lock()
-			for key, codes := range loopState.persistentHeld {
-				EmitKeysUp(virtual, codes)
-				delete(loopState.persistentHeld, key)
-			}
-			loopState.mu.Unlock()
-		}
-		return
-	}
-	if len(shortcut.Commands) == 0 {
-		return
-	}
-	resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
-	LogTrigger(resolvedCmd)
-	Execute(resolvedCmd, cfg)
-}
+func startLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, state *executor.LoopState) {
+	state.Mu.Lock()
+	defer state.Mu.Unlock()
 
-func startLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, state *LoopState) {
-	state.mu.Lock()
-	defer state.mu.Unlock()
-
-	if cancel, exists := state.active[combo]; exists {
+	if cancel, exists := state.Active[combo]; exists {
 		cancel()
 	}
 
 	interval := intervalOrDefault(shortcut.Interval, cfg.Settings.DefaultInterval)
 	ctx, cancel := context.WithCancel(context.Background())
-	state.active[combo] = cancel
+	state.Active[combo] = cancel
 
 	resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
 	LogTrigger(resolvedCmd)
-	go runTickerLoop(ctx, interval, func() { Execute(resolvedCmd, cfg) })
+	go runTickerLoop(ctx, interval, func() { executor.Execute(resolvedCmd, cfg) })
 }
 
-func stopLoop(combo string, state *LoopState) {
-	state.mu.Lock()
-	defer state.mu.Unlock()
+func stopLoop(combo string, state *executor.LoopState) {
+	state.Mu.Lock()
+	defer state.Mu.Unlock()
 
-	if cancel, exists := state.active[combo]; exists {
+	if cancel, exists := state.Active[combo]; exists {
 		cancel()
-		delete(state.active, combo)
+		delete(state.Active, combo)
 	}
 }
 
-func startHeldProcess(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, state *LoopState, virtual *evdev.InputDevice, heldModifiers matcher.ModifierState) {
-	state.mu.Lock()
-	defer state.mu.Unlock()
-
-	if shortcut.IsRemap {
-		if codes, exists := state.heldKeys[combo]; exists {
-			EmitKeysUp(virtual, codes)
+func runTickerLoop(ctx context.Context, interval float64, fn func()) {
+	ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			fn()
 		}
-		codes := EmitKeysDown(virtual, shortcut.RemapCombo, heldModifiers)
+	}
+}
+
+func startHeldProcess(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, state *executor.LoopState, injector *evdev.InputDevice, heldModifiers matcher.ModifierState) {
+	state.Mu.Lock()
+	defer state.Mu.Unlock()
+
+	resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
+
+	// Check if this is a remap command (starts with >>)
+	if strings.HasPrefix(resolvedCmd, ">>") {
+		target := resolvedCmd[2:]
+		if codes, exists := state.HeldKeys[combo]; exists {
+			executor.EmitKeysUp(injector, codes)
+		}
+		codes := executor.EmitKeysDown(injector, target, heldModifiers)
 		if len(codes) > 0 {
-			state.heldKeys[combo] = codes
+			state.HeldKeys[combo] = codes
 		}
 		return
 	}
 
-	if cmd, exists := state.heldProcesses[combo]; exists {
-		StopProcess(cmd)
+	// Shell command
+	if cmd, exists := state.HeldProcesses[combo]; exists {
+		executor.StopProcess(cmd)
 	}
 
-	resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
 	LogTrigger(resolvedCmd)
-	cmd := ExecuteTracked(resolvedCmd, cfg)
+	cmd := executor.ExecuteTracked(resolvedCmd, cfg)
 	if cmd != nil {
-		state.heldProcesses[combo] = cmd
+		state.HeldProcesses[combo] = cmd
 	}
 }
 
@@ -731,45 +692,45 @@ func emitModifierKey(virtual *evdev.InputDevice, resolver func(string) (uint16, 
 	LogDebug("emitModifierKey: write results: key_err=%v, syn_err=%v", err1, err2)
 }
 
-func stopHeldProcess(combo string, state *LoopState, virtual *evdev.InputDevice) {
-	state.mu.Lock()
-	defer state.mu.Unlock()
+func stopHeldProcess(combo string, state *executor.LoopState, injector *evdev.InputDevice) {
+	state.Mu.Lock()
+	defer state.Mu.Unlock()
 
-	if codes, exists := state.heldKeys[combo]; exists {
-		EmitKeysUp(virtual, codes)
-		delete(state.heldKeys, combo)
+	if codes, exists := state.HeldKeys[combo]; exists {
+		executor.EmitKeysUp(injector, codes)
+		delete(state.HeldKeys, combo)
 		return
 	}
 
 	// Fallback: match by base key in case modifier state drifted
 	baseKey := baseKeyFromCombo(combo)
-	for storedCombo, codes := range state.heldKeys {
+	for storedCombo, codes := range state.HeldKeys {
 		if baseKeyFromCombo(storedCombo) == baseKey {
-			EmitKeysUp(virtual, codes)
-			delete(state.heldKeys, storedCombo)
+			executor.EmitKeysUp(injector, codes)
+			delete(state.HeldKeys, storedCombo)
 			return
 		}
 	}
 
-	if cmd, exists := state.heldProcesses[combo]; exists {
-		StopProcess(cmd)
-		delete(state.heldProcesses, combo)
+	if cmd, exists := state.HeldProcesses[combo]; exists {
+		executor.StopProcess(cmd)
+		delete(state.HeldProcesses, combo)
 		return
 	}
 
-	for storedCombo, cmd := range state.heldProcesses {
+	for storedCombo, cmd := range state.HeldProcesses {
 		if baseKeyFromCombo(storedCombo) == baseKey {
-			StopProcess(cmd)
-			delete(state.heldProcesses, storedCombo)
+			executor.StopProcess(cmd)
+			delete(state.HeldProcesses, storedCombo)
 			return
 		}
 	}
 }
 
-func toggleLoopDirect(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, loopState *LoopState) {
-	loopState.mu.Lock()
-	_, running := loopState.active[combo]
-	loopState.mu.Unlock()
+func toggleLoopDirect(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, loopState *executor.LoopState) {
+	loopState.Mu.Lock()
+	_, running := loopState.Active[combo]
+	loopState.Mu.Unlock()
 
 	if running {
 		stopLoop(combo, loopState)
@@ -787,5 +748,5 @@ func executeSwitchShortcut(combo string, shortcut *config.ParsedShortcut, m *mat
 	command := m.GetNextSwitchCommand(key, shortcut.Commands)
 	resolvedCmd := cfg.ResolveCommand(command)
 	LogTrigger(resolvedCmd)
-	Execute(resolvedCmd, cfg)
+	executor.Execute(resolvedCmd, cfg)
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/deprecatedluar/akeyshually/internal/keys"
 	gohelp "github.com/DeprecatedLuar/gohelp-luar"
 )
 
@@ -142,6 +143,16 @@ func validateShortcutEntry(key string, value interface{}, filePath string, line 
 		}
 	}
 
+	// Validate all keys in the combo exist
+	if err := validateKeysExist(parsed.KeyCombo); err != nil {
+		return ValidationError{
+			File:    filePath,
+			Line:    line,
+			Key:     key,
+			Message: err.Error(),
+		}
+	}
+
 	// Validate behavior-specific requirements (command counts, etc.)
 	if err := validateBehaviorRequirements(parsed); err != nil {
 		return ValidationError{
@@ -155,11 +166,34 @@ func validateShortcutEntry(key string, value interface{}, filePath string, line 
 	return nil
 }
 
+// validateKeysExist checks if all keys in a combo are valid
+// Handles both single combos ("super+k") and aliases ("f1/f2/f3")
+func validateKeysExist(combo string) error {
+	// Split on / for aliases first
+	aliases := strings.Split(combo, "/")
+	for _, alias := range aliases {
+		// Then split on + for key combos
+		parts := strings.Split(alias, "+")
+		for _, part := range parts {
+			keyName := strings.ToLower(strings.TrimSpace(part))
+			if _, ok := keys.ResolveKeyCode(keyName); !ok {
+				return fmt.Errorf("unknown key: %s", keyName)
+			}
+		}
+	}
+	return nil
+}
+
+// isRemapCommand checks if a command string uses remap syntax (>, >>, <, <<)
+func isRemapCommand(cmd string) bool {
+	return strings.HasPrefix(cmd, ">") || strings.HasPrefix(cmd, "<")
+}
+
 // validateBehaviorRequirements routes to appropriate validator based on behavior type
 func validateBehaviorRequirements(parsed *ParsedShortcut) error {
-	// Remaps don't need command count validation - they always have 1 command
-	if parsed.IsRemap {
-		return nil
+	// Validate remap syntax if detected
+	if len(parsed.Commands) == 1 && isRemapCommand(parsed.Commands[0]) {
+		return validateRemapCommand(parsed.Commands[0])
 	}
 
 	validator, ok := behaviorValidators[parsed.Behavior]
@@ -167,6 +201,37 @@ func validateBehaviorRequirements(parsed *ParsedShortcut) error {
 		return fmt.Errorf("unknown behavior: %v", parsed.Behavior)
 	}
 	return validator(parsed)
+}
+
+// validateRemapCommand validates remap syntax and ensures non-empty, valid targets
+func validateRemapCommand(cmd string) error {
+	var target string
+
+	switch {
+	case cmd == "<<":
+		return nil // RemapReleaseAll - no target needed
+	case strings.HasPrefix(cmd, ">>"):
+		if len(cmd) == 2 {
+			return fmt.Errorf("remap target cannot be empty")
+		}
+		target = cmd[2:]
+	case strings.HasPrefix(cmd, ">"):
+		if len(cmd) == 1 {
+			return fmt.Errorf("remap target cannot be empty")
+		}
+		target = cmd[1:]
+	case strings.HasPrefix(cmd, "<"):
+		if len(cmd) == 1 {
+			return fmt.Errorf("remap keyup target cannot be empty")
+		}
+		target = cmd[1:]
+	}
+
+	// Validate the target combo contains valid keys
+	if target != "" {
+		return validateKeysExist(target)
+	}
+	return nil
 }
 
 // Lookup table mapping behaviors to their validation functions
