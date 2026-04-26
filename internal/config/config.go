@@ -33,13 +33,6 @@ const (
 
 var defaultConfigFiles = []string{"config.toml", "akeyshually.service"}
 
-const (
-	RemapTap         = 0 // down+up+SYN (default)
-	RemapHoldForever = 1 // keydown only; keys stay held until <<
-	RemapKeyUp       = 2 // keyup only for specified key
-	RemapReleaseAll  = 3 // release all persistently held keys
-)
-
 type BehaviorMode int
 
 const (
@@ -71,9 +64,6 @@ type ParsedShortcut struct {
 	Commands    []string // Single command OR switch array
 	Passthrough bool     // Ignore modifiers when matching
 	AliasGroup  string   // Canonical key for shared state (e.g. "f1/f2.switch"), empty if not an alias
-	IsRemap     bool     // true if value starts with ">" or "<"
-	RemapCombo  string   // the key/combo to remap to (empty for RemapReleaseAll)
-	RemapMode   int      // RemapTap, RemapHoldForever, RemapKeyUp, RemapReleaseAll
 }
 
 type Config struct {
@@ -372,40 +362,6 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 		shortcut.Commands = commands
 	default:
 		return nil, fmt.Errorf("value must be string or array of strings")
-	}
-
-	// Detect remap syntax: value starting with ">" or "<"
-	if len(shortcut.Commands) == 1 {
-		val := shortcut.Commands[0]
-		switch {
-		case val == "<<":
-			shortcut.IsRemap = true
-			shortcut.RemapMode = RemapReleaseAll
-		case strings.HasPrefix(val, ">>"):
-			target := val[2:]
-			if target == "" {
-				return nil, fmt.Errorf("remap target cannot be empty")
-			}
-			shortcut.IsRemap = true
-			shortcut.RemapCombo = normalizeKeyCombo(target)
-			shortcut.RemapMode = RemapHoldForever
-		case strings.HasPrefix(val, ">"):
-			target := val[1:]
-			if target == "" {
-				return nil, fmt.Errorf("remap target cannot be empty")
-			}
-			shortcut.IsRemap = true
-			shortcut.RemapCombo = normalizeKeyCombo(target)
-			shortcut.RemapMode = RemapTap
-		case strings.HasPrefix(val, "<"):
-			target := val[1:]
-			if target == "" {
-				return nil, fmt.Errorf("remap keyup target cannot be empty")
-			}
-			shortcut.IsRemap = true
-			shortcut.RemapCombo = normalizeKeyCombo(target)
-			shortcut.RemapMode = RemapKeyUp
-		}
 	}
 
 	// Parse modifiers (behavior and timing)

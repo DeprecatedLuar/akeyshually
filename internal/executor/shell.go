@@ -1,4 +1,4 @@
-package internal
+package executor
 
 import (
 	"fmt"
@@ -16,6 +16,12 @@ const (
 	fallbackShell = "sh"
 )
 
+// runShell executes a shell command via the unified Run() entry point.
+func runShell(command string, ctx ExecContext) {
+	Execute(command, ctx.Config)
+}
+
+// Execute starts a command in fire-and-forget mode.
 func Execute(command string, cfg *config.Config) {
 	ExecuteTracked(command, cfg)
 }

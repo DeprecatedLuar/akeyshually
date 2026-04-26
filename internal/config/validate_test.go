@@ -8,7 +8,7 @@ import (
 )
 
 func TestValidateShortcutEntry_UnknownKeyInCombo(t *testing.T) {
-	err := validateShortcutEntry("super+unknownkey", "echo test", "test.toml")
+	err := validateShortcutEntry("super+unknownkey", "echo test", "test.toml", 0)
 	if err == nil {
 		t.Fatal("expected error for unknown key, got nil")
 	}
@@ -25,7 +25,7 @@ func TestValidateShortcutEntry_UnknownKeyInCombo(t *testing.T) {
 }
 
 func TestValidateShortcutEntry_UnknownKeyInRemapTarget(t *testing.T) {
-	err := validateShortcutEntry("super+t", ">unknownkey", "test.toml")
+	err := validateShortcutEntry("super+t", ">unknownkey", "test.toml", 0)
 	if err == nil {
 		t.Fatal("expected error for unknown key in remap target, got nil")
 	}
@@ -39,7 +39,7 @@ func TestValidateShortcutEntry_UnknownKeyInRemapTarget(t *testing.T) {
 }
 
 func TestValidateShortcutEntry_EmptyRemapTarget(t *testing.T) {
-	err := validateShortcutEntry("super+t", ">", "test.toml")
+	err := validateShortcutEntry("super+t", ">", "test.toml", 0)
 	if err == nil {
 		t.Fatal("expected error for empty remap target, got nil")
 	}
@@ -68,7 +68,7 @@ func TestValidateShortcutEntry_WrongCommandCount(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.key, func(t *testing.T) {
-			err := validateShortcutEntry(tt.key, tt.value, "test.toml")
+			err := validateShortcutEntry(tt.key, tt.value, "test.toml", 0)
 			if err == nil {
 				t.Fatal("expected error for wrong command count, got nil")
 			}
@@ -104,7 +104,7 @@ func TestValidateShortcutEntry_ValidConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.key, func(t *testing.T) {
-			err := validateShortcutEntry(tt.key, tt.value, "test.toml")
+			err := validateShortcutEntry(tt.key, tt.value, "test.toml", 0)
 			if err != nil {
 				t.Errorf("unexpected error for valid config: %v", err)
 			}
@@ -114,7 +114,7 @@ func TestValidateShortcutEntry_ValidConfig(t *testing.T) {
 
 
 func TestValidateShortcutEntry_LongpressRepeatRejected(t *testing.T) {
-	err := validateShortcutEntry("super+t.longpress.repeat", "echo test", "test.toml")
+	err := validateShortcutEntry("super+t.longpress.repeat", "echo test", "test.toml", 0)
 	if err == nil {
 		t.Fatal("expected error for longpress.repeat, got nil")
 	}
@@ -128,7 +128,7 @@ func TestValidateShortcutEntry_LongpressRepeatRejected(t *testing.T) {
 }
 
 func TestValidateShortcutEntry_InvalidValueType(t *testing.T) {
-	err := validateShortcutEntry("super+t", 123, "test.toml")
+	err := validateShortcutEntry("super+t", 123, "test.toml", 0)
 	if err == nil {
 		t.Fatal("expected error for invalid value type, got nil")
 	}
@@ -142,7 +142,7 @@ func TestValidateShortcutEntry_InvalidValueType(t *testing.T) {
 }
 
 func TestValidateShortcutEntry_ArrayWithNonString(t *testing.T) {
-	err := validateShortcutEntry("super+t", []interface{}{"cmd1", 123}, "test.toml")
+	err := validateShortcutEntry("super+t", []interface{}{"cmd1", 123}, "test.toml", 0)
 	if err == nil {
 		t.Fatal("expected error for array with non-string, got nil")
 	}
@@ -160,7 +160,8 @@ func TestValidateConfig_EmptyShortcuts(t *testing.T) {
 	cfg := &Config{
 		Shortcuts: make(map[string]interface{}),
 	}
-	err := validateConfig(cfg, "test.toml")
+	var meta toml.MetaData
+	err := validateConfig(cfg, "test.toml", &meta)
 	if err != nil {
 		t.Errorf("empty shortcuts config should be valid, got error: %v", err)
 	}
@@ -176,24 +177,33 @@ func TestValidateConfig_MultipleShortcuts(t *testing.T) {
 	cfg := &Config{
 		Shortcuts: make(map[string]interface{}),
 	}
-	_, err := toml.Decode(tomlContent, cfg)
+	meta, err := toml.Decode(tomlContent, cfg)
 	if err != nil {
 		t.Fatalf("failed to decode test config: %v", err)
 	}
 
-	err = validateConfig(cfg, "test.toml")
+	err = validateConfig(cfg, "test.toml", &meta)
 	if err == nil {
 		t.Fatal("expected error for unknown key, got nil")
 	}
-	verr, ok := err.(ValidationError)
+	// validateConfig returns ValidationErrors (plural), not ValidationError
+	verrs, ok := err.(ValidationErrors)
 	if !ok {
-		t.Fatalf("expected ValidationError, got %T", err)
+		t.Fatalf("expected ValidationErrors, got %T", err)
 	}
-	if !strings.Contains(verr.Message, "unknownkey") {
-		t.Errorf("error should mention the unknown key, got: %s", verr.Message)
+	if len(verrs.Errors) == 0 {
+		t.Fatal("expected at least one error")
 	}
-	if verr.File != "test.toml" {
-		t.Errorf("expected file test.toml, got %s", verr.File)
+	// Check that one of the errors mentions unknownkey
+	found := false
+	for _, verr := range verrs.Errors {
+		if strings.Contains(verr.Message, "unknownkey") && verr.File == "test.toml" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected error mentioning unknownkey in test.toml, got: %v", verrs)
 	}
 }
 
@@ -214,7 +224,7 @@ func TestValidationError_Format(t *testing.T) {
 
 func TestValidateShortcutEntry_AliasValidation(t *testing.T) {
 	// All aliases should be validated
-	err := validateShortcutEntry("f1/unknownkey/f3.switch", []interface{}{"cmd1", "cmd2"}, "test.toml")
+	err := validateShortcutEntry("f1/unknownkey/f3.switch", []interface{}{"cmd1", "cmd2"}, "test.toml", 0)
 	if err == nil {
 		t.Fatal("expected error for unknown key in alias, got nil")
 	}

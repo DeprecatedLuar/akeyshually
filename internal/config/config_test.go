@@ -74,11 +74,8 @@ func TestRemapParsing(t *testing.T) {
 		t.Fatalf("remap shortcut should parse without error: %v", err)
 	}
 	s := dst["btn_0"][0]
-	if !s.IsRemap {
-		t.Errorf("IsRemap = false, want true")
-	}
-	if s.RemapCombo != "ctrl+z" {
-		t.Errorf("RemapCombo = %q, want %q", s.RemapCombo, "ctrl+z")
+	if len(s.Commands) != 1 || s.Commands[0] != ">ctrl+z" {
+		t.Errorf("Commands = %v, want [\">ctrl+z\"]", s.Commands)
 	}
 }
 
@@ -111,7 +108,7 @@ func TestPressReleaseParsing(t *testing.T) {
 }
 
 func TestPressReleaseSingleCommandRejected(t *testing.T) {
-	err := validateShortcutEntry("super+m.pressrelease", "mic-on", "test.toml")
+	err := validateShortcutEntry("super+m.pressrelease", "mic-on", "test.toml", 0)
 	if err == nil {
 		t.Fatal("expected error for single command, got nil")
 	}
@@ -128,7 +125,7 @@ func TestHoldBehavior(t *testing.T) {
 }
 
 func TestHoldTwoCommandsRejected(t *testing.T) {
-	err := validateShortcutEntry("super+h.hold", []interface{}{"start", "stop"}, "test.toml")
+	err := validateShortcutEntry("super+h.hold", []interface{}{"start", "stop"}, "test.toml", 0)
 	if err == nil {
 		t.Fatal("expected error for 2-command hold, got nil")
 	}
@@ -256,7 +253,7 @@ func TestDoubleTapSwitchParsing(t *testing.T) {
 }
 
 func TestLongPressRepeatRejected(t *testing.T) {
-	err := validateShortcutEntry("super+h.longpress.repeat", "cmd", "test.toml")
+	err := validateShortcutEntry("super+h.longpress.repeat", "cmd", "test.toml", 0)
 	if err == nil {
 		t.Fatal("expected error for longpress.repeat, got nil")
 	}
@@ -267,8 +264,8 @@ func TestRemapTap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !ps.IsRemap || ps.RemapMode != RemapTap || ps.RemapCombo != "ctrl+z" {
-		t.Errorf("got IsRemap=%v RemapMode=%d RemapCombo=%q, want true/%d/ctrl+z", ps.IsRemap, ps.RemapMode, ps.RemapCombo, RemapTap)
+	if len(ps.Commands) != 1 || ps.Commands[0] != ">ctrl+z" {
+		t.Errorf("Commands = %v, want [\">ctrl+z\"]", ps.Commands)
 	}
 }
 
@@ -277,8 +274,8 @@ func TestRemapHoldForever(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !ps.IsRemap || ps.RemapMode != RemapHoldForever || ps.RemapCombo != "b" {
-		t.Errorf("got IsRemap=%v RemapMode=%d RemapCombo=%q, want true/%d/b", ps.IsRemap, ps.RemapMode, ps.RemapCombo, RemapHoldForever)
+	if len(ps.Commands) != 1 || ps.Commands[0] != ">>b" {
+		t.Errorf("Commands = %v, want [\">>b\"]", ps.Commands)
 	}
 }
 
@@ -287,8 +284,8 @@ func TestRemapKeyUp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !ps.IsRemap || ps.RemapMode != RemapKeyUp || ps.RemapCombo != "k" {
-		t.Errorf("got IsRemap=%v RemapMode=%d RemapCombo=%q, want true/%d/k", ps.IsRemap, ps.RemapMode, ps.RemapCombo, RemapKeyUp)
+	if len(ps.Commands) != 1 || ps.Commands[0] != "<k" {
+		t.Errorf("Commands = %v, want [\"<k\"]", ps.Commands)
 	}
 }
 
@@ -297,7 +294,7 @@ func TestRemapReleaseAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !ps.IsRemap || ps.RemapMode != RemapReleaseAll || ps.RemapCombo != "" {
-		t.Errorf("got IsRemap=%v RemapMode=%d RemapCombo=%q, want true/%d/empty", ps.IsRemap, ps.RemapMode, ps.RemapCombo, RemapReleaseAll)
+	if len(ps.Commands) != 1 || ps.Commands[0] != "<<" {
+		t.Errorf("Commands = %v, want [\"<<\"]", ps.Commands)
 	}
 }
