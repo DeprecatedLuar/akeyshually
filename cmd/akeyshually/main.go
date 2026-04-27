@@ -10,13 +10,14 @@ import (
 
 	evdev "github.com/holoplot/go-evdev"
 
-	"github.com/deprecatedluar/akeyshually/internal"
 	"github.com/deprecatedluar/akeyshually/internal/commands"
 	"github.com/deprecatedluar/akeyshually/internal/common"
 	"github.com/deprecatedluar/akeyshually/internal/config"
 	"github.com/deprecatedluar/akeyshually/internal/executor"
+	"github.com/deprecatedluar/akeyshually/internal/handlers"
 	"github.com/deprecatedluar/akeyshually/internal/listener"
 	"github.com/deprecatedluar/akeyshually/internal/matcher"
+	"github.com/deprecatedluar/akeyshually/internal/timers"
 )
 
 const githubRepo = "DeprecatedLuar/akeyshually"
@@ -229,7 +230,20 @@ func run(configPath string) {
 		name, _ := pair.Physical.Name()
 		go func(p listener.KeyboardPair, devName string) {
 			defer wg.Done()
-			handler := internal.CreateUnifiedHandler(m, cfg, loopState, injector, p.Virtual)
+			stateMap := timers.NewStateMap()
+			emittedTracker := handlers.NewEmittedModifierTracker()
+			handler := func(code uint16, value int32) bool {
+				if cfg.Settings.DisableMediaKeys && listener.IsMediaKey(code) {
+					return false
+				}
+				if value == 1 {
+					return handlers.HandlePress(code, value, m, cfg, loopState, injector, p.Virtual, stateMap, emittedTracker)
+				}
+				if value == 0 {
+					return handlers.HandleRelease(code, value, m, cfg, loopState, injector, p.Virtual, stateMap, emittedTracker)
+				}
+				return false
+			}
 			if err := listener.ListenWithReconnect(p, handler, listener.FindKeyboards, devName); err != nil {
 				fmt.Fprintf(os.Stderr, "Listener error: %v\n", err)
 			}
@@ -243,7 +257,20 @@ func run(configPath string) {
 		name, _ := pair.Physical.Name()
 		go func(p listener.KeyboardPair, devName string) {
 			defer wg.Done()
-			handler := internal.CreateUnifiedHandler(m, cfg, loopState, injector, p.Virtual)
+			stateMap := timers.NewStateMap()
+			emittedTracker := handlers.NewEmittedModifierTracker()
+			handler := func(code uint16, value int32) bool {
+				if cfg.Settings.DisableMediaKeys && listener.IsMediaKey(code) {
+					return false
+				}
+				if value == 1 {
+					return handlers.HandlePress(code, value, m, cfg, loopState, injector, p.Virtual, stateMap, emittedTracker)
+				}
+				if value == 0 {
+					return handlers.HandleRelease(code, value, m, cfg, loopState, injector, p.Virtual, stateMap, emittedTracker)
+				}
+				return false
+			}
 			if err := listener.ListenWithReconnect(p, handler, func() ([]listener.KeyboardPair, error) {
 				return listener.FindDeclaredDevices(declaredDeviceNames)
 			}, devName); err != nil {
