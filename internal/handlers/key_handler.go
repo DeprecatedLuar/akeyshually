@@ -1,4 +1,4 @@
-package internal
+package handlers
 
 import (
 	"context"
@@ -11,7 +11,6 @@ import (
 	"github.com/deprecatedluar/akeyshually/internal/common"
 	"github.com/deprecatedluar/akeyshually/internal/config"
 	"github.com/deprecatedluar/akeyshually/internal/executor"
-	"github.com/deprecatedluar/akeyshually/internal/listener"
 	"github.com/deprecatedluar/akeyshually/internal/matcher"
 	"github.com/deprecatedluar/akeyshually/internal/timers"
 	evdev "github.com/holoplot/go-evdev"
@@ -47,24 +46,7 @@ func (t *EmittedModifierTracker) ClearEmitted(keyName string) {
 	delete(t.emitted, keyName)
 }
 
-func CreateUnifiedHandler(m *matcher.Matcher, cfg *config.Config, loopState *executor.LoopState, injector *evdev.InputDevice, virtual *evdev.InputDevice) listener.KeyHandler {
-	stateMap := timers.NewStateMap()
-	emittedTracker := NewEmittedModifierTracker()
-	return func(code uint16, value int32) bool {
-		if cfg.Settings.DisableMediaKeys && listener.IsMediaKey(code) {
-			return false
-		}
-		if value == 1 {
-			return handlePress(code, value, m, cfg, loopState, injector, virtual, stateMap, emittedTracker)
-		}
-		if value == 0 {
-			return handleRelease(code, value, m, cfg, loopState, injector, virtual, stateMap, emittedTracker)
-		}
-		return false
-	}
-}
-
-func handlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Config, loopState *executor.LoopState, injector *evdev.InputDevice, virtual *evdev.InputDevice, stateMap *timers.StateMap, emittedTracker *EmittedModifierTracker) bool {
+func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Config, loopState *executor.LoopState, injector *evdev.InputDevice, virtual *evdev.InputDevice, stateMap *timers.StateMap, emittedTracker *EmittedModifierTracker) bool {
 	common.LogKey(matcher.GetKeyName(code), code)
 	m.ClearTapCandidate()
 
@@ -181,7 +163,7 @@ func handlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Confi
 	return true
 }
 
-func handleRelease(code uint16, value int32, m *matcher.Matcher, cfg *config.Config, loopState *executor.LoopState, injector *evdev.InputDevice, virtual *evdev.InputDevice, stateMap *timers.StateMap, emittedTracker *EmittedModifierTracker) bool {
+func HandleRelease(code uint16, value int32, m *matcher.Matcher, cfg *config.Config, loopState *executor.LoopState, injector *evdev.InputDevice, virtual *evdev.InputDevice, stateMap *timers.StateMap, emittedTracker *EmittedModifierTracker) bool {
 	if matcher.IsModifierKey(code) {
 		combo := matcher.GetKeyName(code)
 		common.LogDebug("Modifier %s released", combo)
@@ -230,8 +212,8 @@ func handleRelease(code uint16, value int32, m *matcher.Matcher, cfg *config.Con
 	}
 
 	// No active goroutine - stop any sustained processes
-	stopLoop(combo, loopState)
-	stopHeldProcess(combo, loopState, injector)
+	loopState.StopLoop(combo)
+	loopState.StopHeldProcess(combo, injector)
 	return false
 }
 
@@ -480,7 +462,7 @@ func fireWinner(
 	case config.BehaviorNormal:
 		common.LogMatch(combo, combo)
 		if s.Repeat {
-			toggleLoopDirect(combo, s, cfg, loopState)
+			loopState.ToggleLoop(combo, s, cfg)
 		} else {
 			resolvedCmd := cfg.ResolveCommand(s.Commands[0])
 			common.LogTrigger(resolvedCmd)
@@ -507,20 +489,20 @@ func fireWinner(
 		common.LogMatch(combo+".hold", combo)
 		resolvedCmd := cfg.ResolveCommand(s.Commands[0])
 		if s.Repeat {
-			startLoop(combo, s, cfg, loopState)
+			loopState.StartLoop(combo, s, cfg)
 			select {
 			case <-ctx.Done():
 			case <-state.ReleaseCh:
 			}
-			stopLoop(combo, loopState)
+			loopState.StopLoop(combo)
 		} else if strings.HasPrefix(resolvedCmd, ">>") {
 			// Remap hold forever - needs special lifecycle management
-			startHeldProcess(combo, s, cfg, loopState, injector, modifiers)
+			loopState.StartHeldProcess(combo, s, cfg, injector, modifiers)
 			select {
 			case <-ctx.Done():
 			case <-state.ReleaseCh:
 			}
-			stopHeldProcess(combo, loopState, injector)
+			loopState.StopHeldProcess(combo, injector)
 		} else {
 			common.LogTrigger(resolvedCmd)
 			executor.Run(resolvedCmd, execCtx)
@@ -603,84 +585,6 @@ func intervalOrDefault(interval, def float64) float64 {
 	return def
 }
 
-// --- Loop and process management ---
-
-func startLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, state *executor.LoopState) {
-	state.Mu.Lock()
-	defer state.Mu.Unlock()
-
-	if cancel, exists := state.Active[combo]; exists {
-		cancel()
-	}
-
-	interval := intervalOrDefault(shortcut.Interval, cfg.Settings.DefaultInterval)
-	ctx, cancel := context.WithCancel(context.Background())
-	state.Active[combo] = cancel
-
-	resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
-	common.LogTrigger(resolvedCmd)
-	go runTickerLoop(ctx, interval, func() { executor.Execute(resolvedCmd, cfg) })
-}
-
-func stopLoop(combo string, state *executor.LoopState) {
-	state.Mu.Lock()
-	defer state.Mu.Unlock()
-
-	if cancel, exists := state.Active[combo]; exists {
-		cancel()
-		delete(state.Active, combo)
-	}
-}
-
-func runTickerLoop(ctx context.Context, interval float64, fn func()) {
-	ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			fn()
-		}
-	}
-}
-
-func startHeldProcess(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, state *executor.LoopState, injector *evdev.InputDevice, heldModifiers matcher.ModifierState) {
-	state.Mu.Lock()
-	defer state.Mu.Unlock()
-
-	resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
-
-	// Check if this is a remap command (starts with >>)
-	if strings.HasPrefix(resolvedCmd, ">>") {
-		target := resolvedCmd[2:]
-		if codes, exists := state.HeldKeys[combo]; exists {
-			executor.EmitKeysUp(injector, codes)
-		}
-		codes := executor.EmitKeysDown(injector, target, heldModifiers)
-		if len(codes) > 0 {
-			state.HeldKeys[combo] = codes
-		}
-		return
-	}
-
-	// Shell command
-	if cmd, exists := state.HeldProcesses[combo]; exists {
-		executor.StopProcess(cmd)
-	}
-
-	common.LogTrigger(resolvedCmd)
-	cmd := executor.ExecuteTracked(resolvedCmd, cfg)
-	if cmd != nil {
-		state.HeldProcesses[combo] = cmd
-	}
-}
-
-func baseKeyFromCombo(combo string) string {
-	parts := strings.Split(combo, "+")
-	return parts[len(parts)-1]
-}
-
 // isModifierCombo checks if a combo is a lone modifier key
 func isModifierCombo(combo string) bool {
 	return combo == "super" || combo == "ctrl" || combo == "alt" || combo == "shift"
@@ -703,53 +607,6 @@ func emitModifierKey(virtual *evdev.InputDevice, resolver func(string) (uint16, 
 	err1 := virtual.WriteOne(&evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(code), Value: value})
 	err2 := virtual.WriteOne(&evdev.InputEvent{Type: evdev.EV_SYN, Code: evdev.SYN_REPORT, Value: 0})
 	common.LogDebug("emitModifierKey: write results: key_err=%v, syn_err=%v", err1, err2)
-}
-
-func stopHeldProcess(combo string, state *executor.LoopState, injector *evdev.InputDevice) {
-	state.Mu.Lock()
-	defer state.Mu.Unlock()
-
-	if codes, exists := state.HeldKeys[combo]; exists {
-		executor.EmitKeysUp(injector, codes)
-		delete(state.HeldKeys, combo)
-		return
-	}
-
-	// Fallback: match by base key in case modifier state drifted
-	baseKey := baseKeyFromCombo(combo)
-	for storedCombo, codes := range state.HeldKeys {
-		if baseKeyFromCombo(storedCombo) == baseKey {
-			executor.EmitKeysUp(injector, codes)
-			delete(state.HeldKeys, storedCombo)
-			return
-		}
-	}
-
-	if cmd, exists := state.HeldProcesses[combo]; exists {
-		executor.StopProcess(cmd)
-		delete(state.HeldProcesses, combo)
-		return
-	}
-
-	for storedCombo, cmd := range state.HeldProcesses {
-		if baseKeyFromCombo(storedCombo) == baseKey {
-			executor.StopProcess(cmd)
-			delete(state.HeldProcesses, storedCombo)
-			return
-		}
-	}
-}
-
-func toggleLoopDirect(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, loopState *executor.LoopState) {
-	loopState.Mu.Lock()
-	_, running := loopState.Active[combo]
-	loopState.Mu.Unlock()
-
-	if running {
-		stopLoop(combo, loopState)
-	} else {
-		startLoop(combo, shortcut, cfg, loopState)
-	}
 }
 
 func executeSwitchShortcut(combo string, shortcut *config.ParsedShortcut, m *matcher.Matcher, cfg *config.Config) {
