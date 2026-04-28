@@ -71,52 +71,48 @@ func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Confi
 		combo = m.GetCurrentCombo(code)
 		m.UpdateModifierState(code, true)
 
-		// Cancel any active modifier ladders and emit them (user is using modifier for a combo)
+		// Check if modifiers have active ladders - escape hatch to combo or fallback to cancellation
 		modifiers := m.GetCurrentModifiers()
-		if modifiers.Super {
-			if state := stateMap.Get("super"); state != nil {
-				common.LogDebug("Cancelling super ladder (combo detected), emitting super keydown")
-				state.Cancel()
-				stateMap.Delete("super")
-				// Emit super keydown so system receives it
-				if virtual != nil {
-					emitModifierKey(virtual, matcher.ResolveKeyCode, "super", true)
-					emittedTracker.MarkEmitted("super")
+		checkModifierEscape := func(modName string, isHeld bool) bool {
+			if !isHeld {
+				return false
+			}
+			if state := stateMap.Get(modName); state != nil {
+				comboKey := modName + "+" + matcher.GetKeyName(code)
+				if len(cfg.ParsedShortcuts[comboKey]) > 0 {
+					// Escape hatch: valid combo exists, migrate ladder to combo
+					common.LogDebug("Escape hatch: %s ladder migrating to %s", modName, comboKey)
+					select {
+					case state.EscapeCh <- code:
+					default:
+					}
+					// Ladder goroutine owns migration entirely - return immediately
+					return true
+				} else {
+					// Fallback: no combo defined, cancel and emit modifier
+					common.LogDebug("Cancelling %s ladder (combo detected), emitting %s keydown", modName, modName)
+					state.Cancel()
+					stateMap.Delete(modName)
+					if virtual != nil {
+						emitModifierKey(virtual, matcher.ResolveKeyCode, modName, true)
+						emittedTracker.MarkEmitted(modName)
+					}
 				}
 			}
+			return false
 		}
-		if modifiers.Ctrl {
-			if state := stateMap.Get("ctrl"); state != nil {
-				common.LogDebug("Cancelling ctrl ladder (combo detected), emitting ctrl keydown")
-				state.Cancel()
-				stateMap.Delete("ctrl")
-				if virtual != nil {
-					emitModifierKey(virtual, matcher.ResolveKeyCode, "ctrl", true)
-					emittedTracker.MarkEmitted("ctrl")
-				}
-			}
+
+		if checkModifierEscape("super", modifiers.Super) {
+			return true
 		}
-		if modifiers.Alt {
-			if state := stateMap.Get("alt"); state != nil {
-				common.LogDebug("Cancelling alt ladder (combo detected), emitting alt keydown")
-				state.Cancel()
-				stateMap.Delete("alt")
-				if virtual != nil {
-					emitModifierKey(virtual, matcher.ResolveKeyCode, "alt", true)
-					emittedTracker.MarkEmitted("alt")
-				}
-			}
+		if checkModifierEscape("ctrl", modifiers.Ctrl) {
+			return true
 		}
-		if modifiers.Shift {
-			if state := stateMap.Get("shift"); state != nil {
-				common.LogDebug("Cancelling shift ladder (combo detected), emitting shift keydown")
-				state.Cancel()
-				stateMap.Delete("shift")
-				if virtual != nil {
-					emitModifierKey(virtual, matcher.ResolveKeyCode, "shift", true)
-					emittedTracker.MarkEmitted("shift")
-				}
-			}
+		if checkModifierEscape("alt", modifiers.Alt) {
+			return true
+		}
+		if checkModifierEscape("shift", modifiers.Shift) {
+			return true
 		}
 
 		shortcuts = m.GetShortcuts(combo)
@@ -131,9 +127,11 @@ func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Confi
 
 	// Forward second press to a goroutine waiting in the doubletap window
 	if existing := stateMap.Get(combo); existing != nil {
+		common.LogDebug(">>> FOUND EXISTING STATE for %s, calling SignalPress()", combo)
 		existing.SignalPress()
 		return true
 	}
+	common.LogDebug(">>> NO existing state for %s, will create new ladder", combo)
 
 	suppress := false
 
@@ -158,8 +156,9 @@ func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Confi
 	modifiers := m.GetCurrentModifiers()
 	ctx, cancel := context.WithCancel(context.Background())
 	state := timers.NewComboState(cancel)
+	common.LogDebug(">>> ADDING %s to stateMap, launching goroutine", combo)
 	stateMap.Set(combo, state)
-	go runLadder(ctx, state, combo, code, value, candidates, cfg, loopState, injector, virtual, modifiers, stateMap, emittedTracker)
+	go runLadder(ctx, state, combo, code, value, candidates, cfg, loopState, injector, virtual, modifiers, stateMap, emittedTracker, cfg.ParsedShortcuts)
 	return true
 }
 
@@ -233,7 +232,9 @@ func runLadder(
 	modifiers matcher.ModifierState,
 	stateMap *timers.StateMap,
 	emittedTracker *EmittedModifierTracker,
+	shortcuts map[string][]*config.ParsedShortcut,
 ) {
+	common.LogDebug(">>> LADDER GOROUTINE STARTED for %s", combo)
 	defer stateMap.Delete(combo)
 
 	// State tracking
@@ -264,8 +265,31 @@ func runLadder(
 			}
 			return
 
+		case newKey := <-state.EscapeCh:
+			// Foreign key pressed - migrate ladder to combo
+			common.LogDebug("Escape hatch triggered: %s + %s", combo, matcher.GetKeyName(newKey))
+			if timer != nil {
+				timer.Stop()
+			}
+			// stateMap already has modifier entry — delete it, new combo will register itself
+			stateMap.Delete(combo)
+
+			// Build new combo string
+			newCombo := combo + "+" + matcher.GetKeyName(newKey)
+			newShortcuts := shortcuts[newCombo] // already confirmed non-empty in HandlePress
+			newCandidates := timers.BuildCandidates(newShortcuts)
+
+			// Spawn new ladder for the combo
+			newCtx, newCancel := context.WithCancel(context.Background())
+			newState := timers.NewComboState(newCancel)
+			stateMap.Set(newCombo, newState)
+			go runLadder(newCtx, newState, newCombo, newKey, value, newCandidates, cfg,
+				loopState, injector, virtual, modifiers, stateMap, emittedTracker, shortcuts)
+			return
+
 		case <-state.PressCh:
 			// Second press arrived
+			common.LogDebug(">>> LADDER %s RECEIVED PressCh signal (count was %d, will become %d)", combo, count, count+1)
 			count++
 			pressed = true
 			common.LogDebug("Second press: count=%d", count)
