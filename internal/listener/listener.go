@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/deprecatedluar/akeyshually/internal/common"
-	"github.com/deprecatedluar/akeyshually/internal/matcher"
+	"github.com/deprecatedluar/akeyshually/internal/keys"
 	evdev "github.com/holoplot/go-evdev"
 )
 
@@ -251,7 +251,7 @@ func Listen(pair KeyboardPair, handler KeyHandler) error {
 		} else {
 			// Forward all non-key events immediately
 			if event.Type == evdev.EV_ABS && common.IsLoggingEnabled() {
-				common.LogKey(matcher.GetAbsName(uint16(event.Code)), uint16(event.Code))
+				common.LogKey(keys.GetAbsName(uint16(event.Code)), uint16(event.Code))
 			}
 			pair.Virtual.WriteOne(event)
 		}

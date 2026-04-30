@@ -3,51 +3,19 @@ package handlers
 import (
 	"context"
 	"fmt"
-	"os"
-	"strings"
-	"sync"
-	"time"
 
 	"github.com/deprecatedluar/akeyshually/internal/common"
 	"github.com/deprecatedluar/akeyshually/internal/config"
 	"github.com/deprecatedluar/akeyshually/internal/executor"
+	"github.com/deprecatedluar/akeyshually/internal/keys"
+	"github.com/deprecatedluar/akeyshually/internal/ladder"
 	"github.com/deprecatedluar/akeyshually/internal/matcher"
 	"github.com/deprecatedluar/akeyshually/internal/timers"
 	evdev "github.com/holoplot/go-evdev"
 )
 
-// EmittedModifierTracker tracks which modifiers we've emitted to system (so we can release them)
-type EmittedModifierTracker struct {
-	mu      sync.Mutex
-	emitted map[string]bool // modifier name -> emitted state
-}
-
-func NewEmittedModifierTracker() *EmittedModifierTracker {
-	return &EmittedModifierTracker{
-		emitted: make(map[string]bool),
-	}
-}
-
-func (t *EmittedModifierTracker) MarkEmitted(keyName string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.emitted[keyName] = true
-}
-
-func (t *EmittedModifierTracker) WasEmitted(keyName string) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return t.emitted[keyName]
-}
-
-func (t *EmittedModifierTracker) ClearEmitted(keyName string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	delete(t.emitted, keyName)
-}
-
-func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Config, loopState *executor.LoopState, injector *evdev.InputDevice, virtual *evdev.InputDevice, stateMap *timers.StateMap, emittedTracker *EmittedModifierTracker) bool {
-	common.LogKey(matcher.GetKeyName(code), code)
+func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Config, loopState *executor.LoopState, injector *evdev.InputDevice, virtual *evdev.InputDevice, stateMap *timers.StateMap, emittedTracker *timers.EmittedModifierTracker) bool {
+	common.LogKey(keys.GetKeyName(code), code)
 	m.ClearTapCandidate()
 
 	var combo string
@@ -61,7 +29,7 @@ func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Confi
 		m.UpdateModifierState(code, true)
 
 		// Check for lone modifier shortcuts (super.doubletap, super.pressrelease, etc.)
-		combo = matcher.GetKeyName(code) // "super", "ctrl", "alt", or "shift"
+		combo = keys.GetKeyName(code) // "super", "ctrl", "alt", or "shift"
 		shortcuts = m.GetShortcuts(combo)
 		if len(shortcuts) == 0 {
 			return false // No shortcuts, behave as normal modifier
@@ -78,7 +46,7 @@ func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Confi
 				return false
 			}
 			if state := stateMap.Get(modName); state != nil {
-				comboKey := modName + "+" + matcher.GetKeyName(code)
+				comboKey := modName + "+" + keys.GetKeyName(code)
 				if len(cfg.ParsedShortcuts[comboKey]) > 0 {
 					// Escape hatch: valid combo exists, migrate ladder to combo
 					common.LogDebug("Escape hatch: %s ladder migrating to %s", modName, comboKey)
@@ -94,7 +62,7 @@ func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Confi
 					state.Cancel()
 					stateMap.Delete(modName)
 					if virtual != nil {
-						emitModifierKey(virtual, matcher.ResolveKeyCode, modName, true)
+						ladder.EmitModifierKey(virtual, keys.ResolveKeyCode, modName, true)
 						emittedTracker.MarkEmitted(modName)
 					}
 				}
@@ -158,13 +126,13 @@ func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Confi
 	state := timers.NewComboState(cancel)
 	common.LogDebug(">>> ADDING %s to stateMap, launching goroutine", combo)
 	stateMap.Set(combo, state)
-	go runLadder(ctx, state, combo, code, value, candidates, cfg, loopState, injector, virtual, modifiers, stateMap, emittedTracker, cfg.ParsedShortcuts)
+	go ladder.Run(ctx, state, combo, code, value, candidates, cfg, loopState, injector, virtual, modifiers, stateMap, emittedTracker, cfg.ParsedShortcuts)
 	return true
 }
 
-func HandleRelease(code uint16, value int32, m *matcher.Matcher, cfg *config.Config, loopState *executor.LoopState, injector *evdev.InputDevice, virtual *evdev.InputDevice, stateMap *timers.StateMap, emittedTracker *EmittedModifierTracker) bool {
+func HandleRelease(code uint16, value int32, m *matcher.Matcher, cfg *config.Config, loopState *executor.LoopState, injector *evdev.InputDevice, virtual *evdev.InputDevice, stateMap *timers.StateMap, emittedTracker *timers.EmittedModifierTracker) bool {
 	if matcher.IsModifierKey(code) {
-		combo := matcher.GetKeyName(code)
+		combo := keys.GetKeyName(code)
 		common.LogDebug("Modifier %s released", combo)
 
 		if command, matched := m.CheckTap(code); matched {
@@ -193,7 +161,7 @@ func HandleRelease(code uint16, value int32, m *matcher.Matcher, cfg *config.Con
 		// If we emitted this modifier to system, also emit the release
 		if emittedTracker.WasEmitted(combo) {
 			common.LogDebug("Emitting %s release (we emitted the press)", combo)
-			emitModifierKey(virtual, matcher.ResolveKeyCode, combo, false)
+			ladder.EmitModifierKey(virtual, keys.ResolveKeyCode, combo, false)
 			emittedTracker.ClearEmitted(combo)
 			return true // Suppress original release since we emitted it
 		}
@@ -214,423 +182,6 @@ func HandleRelease(code uint16, value int32, m *matcher.Matcher, cfg *config.Con
 	loopState.StopLoop(combo)
 	loopState.StopHeldProcess(combo, injector)
 	return false
-}
-
-// runLadder is the timer ladder goroutine. Evaluates candidates against win conditions.
-// State-driven: tracks count (presses), pressed (held), and steps through timer thresholds.
-func runLadder(
-	ctx context.Context,
-	state *timers.ComboState,
-	combo string,
-	keyCode uint16,
-	value int32,
-	candidates []timers.Candidate,
-	cfg *config.Config,
-	loopState *executor.LoopState,
-	injector *evdev.InputDevice,
-	virtual *evdev.InputDevice,
-	modifiers matcher.ModifierState,
-	stateMap *timers.StateMap,
-	emittedTracker *EmittedModifierTracker,
-	shortcuts map[string][]*config.ParsedShortcut,
-) {
-	common.LogDebug(">>> LADDER GOROUTINE STARTED for %s", combo)
-	defer stateMap.Delete(combo)
-
-	// State tracking
-	count := 1      // First press already happened
-	pressed := true // Key is down
-	phase := 0      // Current phase boundary crossed
-
-	// Build timer ladder: sorted unique thresholds
-	ladder := buildTimerLadder(candidates, cfg.Settings.DefaultInterval)
-	common.LogDebug("Ladder for %s: %v", combo, ladder)
-
-	var timer *time.Timer
-	var timerCh <-chan time.Time
-
-	// Start first timer if ladder exists
-	if len(ladder) > 0 {
-		timer = time.NewTimer(ladder[0])
-		timerCh = timer.C
-		common.LogDebug("Doubletap timer started: %vms", ladder[0].Milliseconds())
-	}
-
-	for {
-		select {
-		case <-ctx.Done():
-			common.LogDebug("Ladder for %s cancelled", combo)
-			if timer != nil {
-				timer.Stop()
-			}
-			return
-
-		case newKey := <-state.EscapeCh:
-			// Foreign key pressed - migrate ladder to combo
-			common.LogDebug("Escape hatch triggered: %s + %s", combo, matcher.GetKeyName(newKey))
-			if timer != nil {
-				timer.Stop()
-			}
-			// stateMap already has modifier entry — delete it, new combo will register itself
-			stateMap.Delete(combo)
-
-			// Build new combo string
-			newCombo := combo + "+" + matcher.GetKeyName(newKey)
-			newShortcuts := shortcuts[newCombo] // already confirmed non-empty in HandlePress
-			newCandidates := timers.BuildCandidates(newShortcuts)
-
-			// Spawn new ladder for the combo
-			newCtx, newCancel := context.WithCancel(context.Background())
-			newState := timers.NewComboState(newCancel)
-			stateMap.Set(newCombo, newState)
-			go runLadder(newCtx, newState, newCombo, newKey, value, newCandidates, cfg,
-				loopState, injector, virtual, modifiers, stateMap, emittedTracker, shortcuts)
-			return
-
-		case <-state.PressCh:
-			// Second press arrived
-			common.LogDebug(">>> LADDER %s RECEIVED PressCh signal (count was %d, will become %d)", combo, count, count+1)
-			count++
-			pressed = true
-			common.LogDebug("Second press: count=%d", count)
-
-			// Prune dead candidates
-			candidates = pruneCandidates(candidates, count, pressed, phase)
-			if len(candidates) == 0 {
-				common.LogDebug("no candidate won for %s (all pruned after second press)", combo)
-				if timer != nil {
-					timer.Stop()
-				}
-				return
-			}
-
-			// Check for immediate winner
-			if winner := checkWinner(candidates, count, pressed, phase); winner != nil {
-				if timer != nil {
-					timer.Stop()
-				}
-				fireWinner(combo, keyCode, value, winner, cfg, loopState, injector, virtual, modifiers, ctx, state)
-				return
-			}
-
-		case <-state.ReleaseCh:
-			// Key released
-			pressed = false
-			common.LogDebug("Release: count=%d, pressed=false", count)
-
-			// Prune dead candidates
-			candidates = pruneCandidates(candidates, count, pressed, phase)
-			if len(candidates) == 0 {
-				common.LogDebug("no candidate won for %s (all pruned after release)", combo)
-				if timer != nil {
-					timer.Stop()
-				}
-				return
-			}
-
-			// Check for immediate winner
-			if winner := checkWinner(candidates, count, pressed, phase); winner != nil {
-				if timer != nil {
-					timer.Stop()
-				}
-				fireWinner(combo, keyCode, value, winner, cfg, loopState, injector, virtual, modifiers, ctx, state)
-				return
-			}
-
-		case <-timerCh:
-			// Timer expired, advance phase
-			phase++
-			common.LogDebug("Timer expired: phase=%d", phase)
-
-			// Prune dead candidates
-			candidates = pruneCandidates(candidates, count, pressed, phase)
-
-			// Check for winner
-			if winner := checkWinner(candidates, count, pressed, phase); winner != nil {
-				fireWinner(combo, keyCode, value, winner, cfg, loopState, injector, virtual, modifiers, ctx, state)
-				return
-			}
-
-			// No winner yet, advance to next timer threshold
-			if phase < len(ladder) {
-				timer.Reset(ladder[phase])
-				timerCh = timer.C
-				common.LogDebug("Next timer: %vms", ladder[phase].Milliseconds())
-			} else {
-				// No more timers, ladder exhausted with no winner
-				common.LogDebug("no candidate won for %s (ladder exhausted)", combo)
-
-				// If this is a modifier key that was suppressed, emit it now so system receives it
-				if isModifierCombo(combo) && virtual != nil {
-					common.LogDebug("Emitting unmatched modifier %s to system (pressed=%v)", combo, pressed)
-					emitModifierKey(virtual, matcher.ResolveKeyCode, combo, pressed)
-					if pressed {
-						emittedTracker.MarkEmitted(combo)
-					}
-				}
-				return
-			}
-		}
-	}
-}
-
-// buildTimerLadder extracts unique sorted timer thresholds from candidates.
-// Only adds timers for phases that candidates actually need.
-func buildTimerLadder(candidates []timers.Candidate, defaultInterval float64) []time.Duration {
-	thresholds := make(map[int]time.Duration)
-
-	for _, c := range candidates {
-		interval := intervalOrDefault(c.Shortcut.Interval, defaultInterval)
-
-		// Doubletap wins at Phase 0 but needs a Phase 1 timer for its window
-		if c.Shortcut.Behavior == config.BehaviorDoubleTap {
-			if existing, ok := thresholds[1]; !ok || ms(interval) > existing {
-				thresholds[1] = ms(interval)
-			}
-		}
-
-		// Only add Phase 1 threshold if candidate needs it
-		if c.Condition.Phase >= 1 {
-			if existing, ok := thresholds[1]; !ok || ms(interval) > existing {
-				thresholds[1] = ms(interval)
-			}
-		}
-
-		// Phase 2 threshold (for taphold/taplongpress)
-		if c.Condition.Phase == 2 {
-			holdInterval := intervalOrDefault(c.Shortcut.HoldInterval, defaultInterval)
-			if existing, ok := thresholds[2]; !ok || ms(holdInterval) > existing {
-				thresholds[2] = ms(holdInterval)
-			}
-		}
-	}
-
-	// Convert to sorted slice
-	var ladder []time.Duration
-	for phase := 1; phase <= len(thresholds); phase++ {
-		if duration, exists := thresholds[phase]; exists {
-			ladder = append(ladder, duration)
-		}
-	}
-
-	return ladder
-}
-
-// pruneCandidates removes candidates that can no longer win
-func pruneCandidates(candidates []timers.Candidate, count int, pressed bool, phase int) []timers.Candidate {
-	pruned := make([]timers.Candidate, 0, len(candidates))
-	for _, c := range candidates {
-		// Can this candidate still possibly win?
-		// It's dead if:
-		// - count already exceeds what it needs
-		// - count is stuck below what it needs and we're past the phase where more presses can arrive
-		// - pressed state is incompatible and we can't change it anymore
-
-		if count > c.Condition.Count {
-			// Too many presses
-			continue
-		}
-
-		if count < c.Condition.Count && phase > c.Condition.Phase {
-			// Not enough presses and we're past the phase boundary
-			continue
-		}
-
-		// Candidate still alive
-		pruned = append(pruned, c)
-	}
-	return pruned
-}
-
-// checkWinner returns the first candidate whose win condition is satisfied
-func checkWinner(candidates []timers.Candidate, count int, pressed bool, phase int) *timers.Candidate {
-	for i := range candidates {
-		c := &candidates[i]
-		if c.Condition.Count == count &&
-			c.Condition.Pressed == pressed &&
-			c.Condition.Phase <= phase {
-			return c
-		}
-	}
-	return nil
-}
-
-// fireWinner executes the winning candidate's shortcut
-func fireWinner(
-	combo string,
-	keyCode uint16,
-	value int32,
-	winner *timers.Candidate,
-	cfg *config.Config,
-	loopState *executor.LoopState,
-	injector *evdev.InputDevice,
-	virtual *evdev.InputDevice,
-	modifiers matcher.ModifierState,
-	ctx context.Context,
-	state *timers.ComboState,
-) {
-	s := winner.Shortcut
-
-	// Build execution context
-	execCtx := executor.ExecContext{
-		KeyCode:   keyCode,
-		Value:     value,
-		Virtual:   virtual,
-		Injector:  injector,
-		Modifiers: modifiers,
-		Config:    cfg,
-		LoopState: loopState,
-	}
-
-	switch s.Behavior {
-	case config.BehaviorNormal:
-		common.LogMatch(combo, combo)
-		if s.Repeat {
-			loopState.ToggleLoop(combo, s, cfg)
-		} else {
-			resolvedCmd := cfg.ResolveCommand(s.Commands[0])
-			common.LogTrigger(resolvedCmd)
-			executor.Run(resolvedCmd, execCtx)
-		}
-
-	case config.BehaviorPressRelease:
-		common.LogMatch(combo+".pressrelease", combo)
-		if s.Commands[0] != "" {
-			resolvedCmd := cfg.ResolveCommand(s.Commands[0])
-			common.LogTrigger(resolvedCmd)
-			executor.Run(resolvedCmd, execCtx)
-		}
-		// 10ms gap between press and release commands
-		time.AfterFunc(10*time.Millisecond, func() {
-			if s.Commands[1] != "" {
-				resolvedCmd := cfg.ResolveCommand(s.Commands[1])
-				common.LogTrigger(resolvedCmd)
-				executor.Run(resolvedCmd, execCtx)
-			}
-		})
-
-	case config.BehaviorHold, config.BehaviorLongPress:
-		common.LogMatch(combo+".hold", combo)
-		resolvedCmd := cfg.ResolveCommand(s.Commands[0])
-		if s.Repeat {
-			loopState.StartLoop(combo, s, cfg)
-			select {
-			case <-ctx.Done():
-			case <-state.ReleaseCh:
-			}
-			loopState.StopLoop(combo)
-		} else if strings.HasPrefix(resolvedCmd, ">>") {
-			// Remap hold forever - needs special lifecycle management
-			loopState.StartHeldProcess(combo, s, cfg, injector, modifiers)
-			select {
-			case <-ctx.Done():
-			case <-state.ReleaseCh:
-			}
-			loopState.StopHeldProcess(combo, injector)
-		} else {
-			common.LogTrigger(resolvedCmd)
-			executor.Run(resolvedCmd, execCtx)
-			// For longpress, exit immediately
-			if s.Behavior != config.BehaviorLongPress {
-				select {
-				case <-ctx.Done():
-				case <-state.ReleaseCh:
-				}
-			}
-		}
-
-	case config.BehaviorHoldRelease:
-		common.LogMatch(combo+".holdrelease", combo)
-		if s.Commands[0] != "" {
-			resolvedCmd := cfg.ResolveCommand(s.Commands[0])
-			common.LogTrigger(resolvedCmd)
-			executor.Run(resolvedCmd, execCtx)
-		}
-		select {
-		case <-ctx.Done():
-		case <-state.ReleaseCh:
-		}
-		if s.Commands[1] != "" {
-			resolvedCmd := cfg.ResolveCommand(s.Commands[1])
-			common.LogMatch(combo+".holdrelease.release", combo)
-			common.LogTrigger(resolvedCmd)
-			executor.Run(resolvedCmd, execCtx)
-		}
-
-	case config.BehaviorDoubleTap:
-		fire(combo+".doubletap", s.Commands[0], cfg, execCtx)
-
-	case config.BehaviorTapHold:
-		common.LogMatch(combo+".taphold", combo)
-		resolvedCmd := cfg.ResolveCommand(s.Commands[0])
-		common.LogTrigger(resolvedCmd)
-		cmd := executor.ExecuteTracked(resolvedCmd, cfg)
-		if cmd != nil {
-			loopState.Mu.Lock()
-			loopState.HeldProcesses[combo] = cmd
-			loopState.Mu.Unlock()
-		}
-		select {
-		case <-ctx.Done():
-		case <-state.ReleaseCh:
-		}
-		loopState.Mu.Lock()
-		if c, exists := loopState.HeldProcesses[combo]; exists {
-			executor.StopProcess(c)
-			delete(loopState.HeldProcesses, combo)
-		}
-		loopState.Mu.Unlock()
-
-	case config.BehaviorTapLongPress:
-		common.LogMatch(combo+".taplongpress", combo)
-		resolvedCmd := cfg.ResolveCommand(s.Commands[1])
-		common.LogTrigger(resolvedCmd)
-		executor.Run(resolvedCmd, execCtx)
-	}
-}
-
-// fire is a helper for simple one-shot command execution with logging.
-func fire(label, command string, cfg *config.Config, execCtx executor.ExecContext) {
-	resolvedCmd := cfg.ResolveCommand(command)
-	common.LogMatch(label, label)
-	common.LogTrigger(resolvedCmd)
-	executor.Run(resolvedCmd, execCtx)
-}
-
-// ms converts float64 milliseconds to time.Duration.
-func ms(d float64) time.Duration {
-	return time.Duration(d) * time.Millisecond
-}
-
-func intervalOrDefault(interval, def float64) float64 {
-	if interval > 0 {
-		return interval
-	}
-	return def
-}
-
-// isModifierCombo checks if a combo is a lone modifier key
-func isModifierCombo(combo string) bool {
-	return combo == "super" || combo == "ctrl" || combo == "alt" || combo == "shift"
-}
-
-// emitModifierKey emits a modifier key event to the virtual keyboard
-func emitModifierKey(virtual *evdev.InputDevice, resolver func(string) (uint16, bool), keyName string, down bool) {
-	code, ok := resolver(keyName)
-	if !ok {
-		fmt.Fprintf(os.Stderr, "Failed to resolve modifier key: %s\n", keyName)
-		return
-	}
-
-	value := int32(0)
-	if down {
-		value = 1
-	}
-
-	common.LogDebug("emitModifierKey: writing %s (code=%d, value=%d) to virtual device", keyName, code, value)
-	err1 := virtual.WriteOne(&evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(code), Value: value})
-	err2 := virtual.WriteOne(&evdev.InputEvent{Type: evdev.EV_SYN, Code: evdev.SYN_REPORT, Value: 0})
-	common.LogDebug("emitModifierKey: write results: key_err=%v, syn_err=%v", err1, err2)
 }
 
 func executeSwitchShortcut(combo string, shortcut *config.ParsedShortcut, m *matcher.Matcher, cfg *config.Config) {

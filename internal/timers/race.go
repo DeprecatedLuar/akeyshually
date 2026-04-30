@@ -7,75 +7,24 @@ import (
 	"github.com/deprecatedluar/akeyshually/internal/config"
 )
 
-// WinCondition describes the exact state that must hold for a trigger to win.
-type WinCondition struct {
-	Count   int  // number of key-down events required
-	Pressed bool // key must still be held at resolution time
-	Phase   int  // 1 = first timer boundary, 2 = second timer boundary
-}
-
-// Candidate pairs a shortcut with its pre-computed win condition.
-// Switch and immediate-fire shortcuts are excluded — they fire outside the chain.
+// Candidate represents a shortcut that participates in the timer ladder.
+// Switch behaviors are excluded — they fire outside the ladder.
 type Candidate struct {
-	Shortcut  *config.ParsedShortcut
-	Condition WinCondition
+	Shortcut *config.ParsedShortcut
 }
 
-// BuildCandidates maps shortcuts to their win conditions with context-aware phase assignment.
-// Phases are determined by what other triggers exist on the same key.
+// BuildCandidates filters shortcuts to those that need ladder resolution.
+// Switch behaviors fire immediately and are excluded.
 func BuildCandidates(shortcuts []*config.ParsedShortcut) []Candidate {
-	// Detect what behaviors are present
-	hasDoubleTap := false
-	hasTapHold := false
-
-	for _, s := range shortcuts {
-		if s.Behavior == config.BehaviorDoubleTap {
-			hasDoubleTap = true
-		}
-		if s.Behavior == config.BehaviorTapHold || s.Behavior == config.BehaviorTapLongPress {
-			hasTapHold = true
-		}
-	}
-
-	// Build candidates with context-aware phases
 	var out []Candidate
 	for _, s := range shortcuts {
-		cond, ok := contextAwareWinCondition(s.Behavior, hasDoubleTap, hasTapHold)
-		if !ok {
+		// Exclude switch — fires outside the ladder
+		if s.Behavior == config.BehaviorSwitch {
 			continue
 		}
-		out = append(out, Candidate{Shortcut: s, Condition: cond})
+		out = append(out, Candidate{Shortcut: s})
 	}
 	return out
-}
-
-// contextAwareWinCondition assigns win conditions based on behavior and what other triggers exist.
-func contextAwareWinCondition(b config.BehaviorMode, hasDoubleTap, hasTapHold bool) (WinCondition, bool) {
-	switch b {
-	case config.BehaviorNormal:
-		// If doubletap exists, onpress must wait for doubletap window to close
-		if hasDoubleTap {
-			return WinCondition{Count: 1, Pressed: false, Phase: 1}, true
-		}
-		// Solo onpress wins immediately on release
-		return WinCondition{Count: 1, Pressed: false, Phase: 0}, true
-
-	case config.BehaviorPressRelease:
-		if hasDoubleTap {
-			return WinCondition{Count: 1, Pressed: false, Phase: 1}, true
-		}
-		return WinCondition{Count: 1, Pressed: false, Phase: 0}, true
-
-	case config.BehaviorHold, config.BehaviorHoldRelease, config.BehaviorLongPress:
-		return WinCondition{Count: 1, Pressed: true, Phase: 1}, true
-
-	case config.BehaviorDoubleTap:
-		return WinCondition{Count: 2, Pressed: false, Phase: 0}, true
-
-	case config.BehaviorTapHold, config.BehaviorTapLongPress:
-		return WinCondition{Count: 2, Pressed: true, Phase: 2}, true
-	}
-	return WinCondition{}, false
 }
 
 // ComboState drives the chain goroutine for a single key press.
@@ -163,4 +112,34 @@ func (sm *StateMap) CancelCombosWithModifier(modifierName string) []string {
 	}
 
 	return cancelled
+}
+
+// EmittedModifierTracker tracks which modifiers we've emitted to system (so we can release them)
+type EmittedModifierTracker struct {
+	mu      sync.Mutex
+	emitted map[string]bool // modifier name -> emitted state
+}
+
+func NewEmittedModifierTracker() *EmittedModifierTracker {
+	return &EmittedModifierTracker{
+		emitted: make(map[string]bool),
+	}
+}
+
+func (t *EmittedModifierTracker) MarkEmitted(keyName string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.emitted[keyName] = true
+}
+
+func (t *EmittedModifierTracker) WasEmitted(keyName string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.emitted[keyName]
+}
+
+func (t *EmittedModifierTracker) ClearEmitted(keyName string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.emitted, keyName)
 }
