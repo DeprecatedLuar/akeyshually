@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/deprecatedluar/akeyshually/internal/config"
+	"github.com/deprecatedluar/akeyshually/internal/keys"
 
 	evdev "github.com/holoplot/go-evdev"
 )
@@ -162,7 +163,7 @@ func extractBaseKey(combo string) string {
 func (m *Matcher) GetCurrentCombo(code uint16) string {
 	// Fast path: no modifiers (most common case)
 	if !m.state.Super && !m.state.Ctrl && !m.state.Alt && !m.state.Shift {
-		return GetKeyName(code)
+		return keys.GetKeyName(code)
 	}
 
 	m.comboBuilder.Reset()
@@ -194,7 +195,7 @@ func (m *Matcher) GetCurrentCombo(code uint16) string {
 		needPlus = true
 	}
 
-	if name := GetKeyName(code); name != "" {
+	if name := keys.GetKeyName(code); name != "" {
 		if needPlus {
 			m.comboBuilder.WriteByte('+')
 		}

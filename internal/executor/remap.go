@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/deprecatedluar/akeyshually/internal/keys"
 	"github.com/deprecatedluar/akeyshually/internal/matcher"
 	evdev "github.com/holoplot/go-evdev"
 )
@@ -60,7 +61,7 @@ func runRemap(cmd string, ctx ExecContext) {
 	case strings.HasPrefix(cmd, RemapKeyUp):
 		// Release single key (<)
 		target := cmd[1:]
-		code, ok := matcher.ResolveKeyCode(target)
+		code, ok := keys.ResolveKeyCode(target)
 		if !ok {
 			fmt.Fprintf(os.Stderr, "Remap error: unknown key %q\n", target)
 			return
@@ -78,7 +79,7 @@ func EmitKeysDown(injector *evdev.InputDevice, combo string, heldModifiers match
 	parts := strings.Split(combo, "+")
 	var codes []uint16
 	for _, part := range parts {
-		code, ok := matcher.ResolveKeyCode(strings.TrimSpace(part))
+		code, ok := keys.ResolveKeyCode(strings.TrimSpace(part))
 		if !ok {
 			fmt.Fprintf(os.Stderr, "Remap error: unknown key %q\n", part)
 			continue
@@ -111,7 +112,7 @@ func EmitKeyCombo(injector *evdev.InputDevice, combo string, heldModifiers match
 	var finalCode uint16
 
 	for i, part := range parts {
-		code, ok := matcher.ResolveKeyCode(strings.TrimSpace(part))
+		code, ok := keys.ResolveKeyCode(strings.TrimSpace(part))
 		if !ok {
 			return fmt.Errorf("unknown key: %q", part)
 		}

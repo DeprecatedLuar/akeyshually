@@ -1,15 +1,13 @@
-package matcher
+package keys
 
 import (
 	"fmt"
 	"strings"
 	"testing"
-
-	"github.com/deprecatedluar/akeyshually/internal/keys"
 )
 
 func TestGetAbsNameKnown(t *testing.T) {
-	for code, expected := range keys.AbsCodeNames {
+	for code, expected := range AbsCodeNames {
 		got := GetAbsName(code)
 		if got != expected {
 			t.Errorf("GetAbsName(%d) = %q, want %q", code, got, expected)

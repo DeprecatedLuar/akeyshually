@@ -231,7 +231,7 @@ func run(configPath string) {
 		go func(p listener.KeyboardPair, devName string) {
 			defer wg.Done()
 			stateMap := timers.NewStateMap()
-			emittedTracker := handlers.NewEmittedModifierTracker()
+			emittedTracker := timers.NewEmittedModifierTracker()
 			handler := func(code uint16, value int32) bool {
 				if cfg.Settings.DisableMediaKeys && listener.IsMediaKey(code) {
 					return false
@@ -258,7 +258,7 @@ func run(configPath string) {
 		go func(p listener.KeyboardPair, devName string) {
 			defer wg.Done()
 			stateMap := timers.NewStateMap()
-			emittedTracker := handlers.NewEmittedModifierTracker()
+			emittedTracker := timers.NewEmittedModifierTracker()
 			handler := func(code uint16, value int32) bool {
 				if cfg.Settings.DisableMediaKeys && listener.IsMediaKey(code) {
 					return false
