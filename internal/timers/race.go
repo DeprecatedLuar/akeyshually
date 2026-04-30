@@ -27,6 +27,16 @@ func BuildCandidates(shortcuts []*config.ParsedShortcut) []Candidate {
 	return out
 }
 
+// NewEscapeCandidate creates a pseudo-candidate that prevents premature ladder resolution
+// when escape hatches (e.g. super+w, super+shift+b) might arrive.
+func NewEscapeCandidate() Candidate {
+	return Candidate{
+		Shortcut: &config.ParsedShortcut{
+			Behavior: config.BehaviorEscapePending,
+		},
+	}
+}
+
 // ComboState drives the chain goroutine for a single key press.
 // The event handler signals it via channels; the goroutine owns resolution.
 type ComboState struct {

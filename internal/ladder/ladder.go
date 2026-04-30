@@ -52,12 +52,19 @@ func Run(
 	}
 	common.LogDebug("Ladder %s: initial candidates=%s, hasHold=%v", combo, formatCandidates(candidates), hasHold)
 
+	// Inject escape pending candidate if this combo has child escape hatches
+	if cfg.EscapeMap[combo] {
+		common.LogDebug("Ladder %s: injecting EscapePending (has child combos)", combo)
+		candidates = append(candidates, timers.NewEscapeCandidate())
+	}
+
 	// Build timer ladder: sorted unique thresholds
 	ladder := buildTimerLadder(candidates, cfg.Settings.DefaultInterval)
 	common.LogDebug("Ladder %s: timer phases=%v", combo, ladder)
 
 	// Single candidate with no timers = already won, fire immediately
-	if len(candidates) == 1 && len(ladder) == 0 {
+	// BUT: Skip early exit if the candidate is EscapePending (needs to wait for actual key events)
+	if len(candidates) == 1 && len(ladder) == 0 && candidates[0].Shortcut.Behavior != config.BehaviorEscapePending {
 		common.LogDebug(">>> LADDER %s: single candidate no timers, firing immediately", combo)
 		fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, injector, virtual, modifiers, ctx, state)
 		return
@@ -201,18 +208,8 @@ func Run(
 				timerCh = timer.C
 				common.LogDebug("Ladder %s: advancing to next timer phase=%d duration=%vms", combo, phase+1, ladder[phase].Milliseconds())
 			} else {
-				// No more timers, ladder exhausted with no winner
-				common.LogDebug(">>> LADDER %s: NO WINNER (ladder exhausted, %d survivors remain)", combo, len(candidates))
-
-				// If this is a modifier key that was suppressed, emit it now so system receives it
-				if isModifierCombo(combo) && virtual != nil {
-					common.LogDebug("Emitting unmatched modifier %s to system (pressed=%v)", combo, pressed)
-					EmitModifierKey(virtual, keys.ResolveKeyCode, combo, pressed)
-					if pressed {
-						emittedTracker.MarkEmitted(combo)
-					}
-				}
-				return
+				// No more timers, but survivors remain - continue waiting for ReleaseCh/PressCh/EscapeCh
+				common.LogDebug("Ladder %s: timer exhausted, %d survivors remain (waiting for events)", combo, len(candidates))
 			}
 		}
 	}
@@ -305,6 +302,10 @@ func isEliminated(b config.BehaviorMode, count int, pressed bool, phase int, has
 		if phase >= 1 && count < 2 {
 			return true
 		}
+		// Eliminated by holding past hold threshold on second press (taphold wins)
+		if phase >= 2 {
+			return true
+		}
 		return false
 
 	case config.BehaviorTapHold, config.BehaviorTapLongPress:
@@ -312,11 +313,19 @@ func isEliminated(b config.BehaviorMode, count int, pressed bool, phase int, has
 		if !pressed && count < 2 && phase >= 1 {
 			return true
 		}
-		// Eliminated by releasing within tap window on first press (onpress territory)
-		if !pressed && count == 1 && phase == 0 {
+		// Eliminated by releasing on second press before hold threshold (doubletap wins)
+		if !pressed && count == 2 && phase < 2 {
+			return true
+		}
+		// Eliminated by holding past hold threshold on first press (hold wins, not taphold)
+		if phase >= 2 && count < 2 {
 			return true
 		}
 		return false
+
+	case config.BehaviorEscapePending:
+		// Eliminated only when key released (no escape hatch arrived)
+		return !pressed
 
 	default:
 		// Unknown behavior, don't eliminate
@@ -460,6 +469,10 @@ func fireWinner(
 		resolvedCmd := cfg.ResolveCommand(s.Commands[1])
 		common.LogTrigger(resolvedCmd)
 		executor.Run(resolvedCmd, execCtx)
+
+	case config.BehaviorEscapePending:
+		// No-op: this should never fire (eliminated before it can win)
+		common.LogDebug("BUG: EscapePending won the ladder for %s (should be impossible)", combo)
 	}
 }
 
@@ -540,6 +553,8 @@ func behaviorName(b config.BehaviorMode) string {
 		return "taphold"
 	case config.BehaviorTapLongPress:
 		return "taplongpress"
+	case config.BehaviorEscapePending:
+		return "escape_pending"
 	default:
 		return "unknown"
 	}

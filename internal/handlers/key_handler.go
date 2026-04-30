@@ -29,6 +29,49 @@ func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Confi
 		m.UpdateModifierState(code, true)
 		common.LogDebug(">>> MODIFIER PRESS: %s, checking for active modifier ladders", keys.GetKeyName(code))
 
+		// Check if other modifiers have active ladders - escape hatch to combo or fallback to cancellation
+		checkModifierEscape := func(modName string, isHeld bool) bool {
+			if !isHeld {
+				return false
+			}
+			if state := stateMap.Get(modName); state != nil {
+				comboKey := modName + "+" + keys.GetKeyName(code)
+				if len(cfg.ParsedShortcuts[comboKey]) > 0 {
+					// Escape hatch: valid combo exists, migrate ladder to combo
+					common.LogDebug("Escape hatch: %s ladder migrating to %s", modName, comboKey)
+					select {
+					case state.EscapeCh <- code:
+					default:
+					}
+					// Ladder goroutine owns migration entirely - return immediately
+					return true
+				} else {
+					// Fallback: no combo defined, cancel and emit modifier
+					common.LogDebug("Cancelling %s ladder (combo detected), emitting %s keydown", modName, modName)
+					state.Cancel()
+					stateMap.Delete(modName)
+					if virtual != nil {
+						ladder.EmitModifierKey(virtual, keys.ResolveKeyCode, modName, true)
+						emittedTracker.MarkEmitted(modName)
+					}
+				}
+			}
+			return false
+		}
+
+		if checkModifierEscape("super", modifiers.Super) {
+			return true
+		}
+		if checkModifierEscape("ctrl", modifiers.Ctrl) {
+			return true
+		}
+		if checkModifierEscape("alt", modifiers.Alt) {
+			return true
+		}
+		if checkModifierEscape("shift", modifiers.Shift) {
+			return true
+		}
+
 		// Check for lone modifier shortcuts (super.doubletap, super.pressrelease, etc.)
 		combo = keys.GetKeyName(code) // "super", "ctrl", "alt", or "shift"
 		shortcuts = m.GetShortcuts(combo)
