@@ -27,6 +27,7 @@ func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Confi
 			m.MarkTapCandidate(code)
 		}
 		m.UpdateModifierState(code, true)
+		common.LogDebug(">>> MODIFIER PRESS: %s, checking for active modifier ladders", keys.GetKeyName(code))
 
 		// Check for lone modifier shortcuts (super.doubletap, super.pressrelease, etc.)
 		combo = keys.GetKeyName(code) // "super", "ctrl", "alt", or "shift"
@@ -41,6 +42,7 @@ func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Confi
 
 		// Check if modifiers have active ladders - escape hatch to combo or fallback to cancellation
 		modifiers := m.GetCurrentModifiers()
+		common.LogDebug(">>> ESCAPE CHECK: super=%v ctrl=%v alt=%v shift=%v", modifiers.Super, modifiers.Ctrl, modifiers.Alt, modifiers.Shift)
 		checkModifierEscape := func(modName string, isHeld bool) bool {
 			if !isHeld {
 				return false
@@ -171,6 +173,8 @@ func HandleRelease(code uint16, value int32, m *matcher.Matcher, cfg *config.Con
 	}
 
 	combo := m.GetCurrentCombo(code)
+	common.LogDebug(">>> RELEASE: code=%d, built combo=%s, modifiers=super:%v ctrl:%v alt:%v shift:%v",
+		code, combo, m.GetCurrentModifiers().Super, m.GetCurrentModifiers().Ctrl, m.GetCurrentModifiers().Alt, m.GetCurrentModifiers().Shift)
 
 	// Signal release to active goroutine if one exists
 	if state := stateMap.Get(combo); state != nil {
