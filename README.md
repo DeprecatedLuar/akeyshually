@@ -86,7 +86,7 @@ mv akeyshually ~/.local/bin/
 
 <img src="other/assets/ermactually.jpeg" alt="Actually..." align="right" width="200"/>
 
-*I'd check out the [Overlay System](#overlay-system) and [Behaviors](#behaviors). That's where it gets interesting.*
+*I'd check out the [Overlay System](#overlay-system) and [Behaviors](#behaviors). That's where it gets fun.*
 
 - I designed it to have zero conflicts with any other remapper or shortcut tool. (keyd, kanata, kmonad, xremap...)
 - Dead-simple TOML config. Modular overlays that are portable and shareable by design for absolute no conflicts.
@@ -100,17 +100,33 @@ mv akeyshually ~/.local/bin/
 
 ## Quick Start
 
-First run auto-generates config files in `~/.config/akeyshually/`. Just run:
+<!-- demo gif -->
 
+**Prerequisites:**
+```bash
+# Add yourself to the input group (first time only)
+sudo usermod -aG input $USER
+# then logout and back in
+```
+
+**Run akeyshually** — config auto-generates at `~/.config/akeyshually/`:
 ```bash
 akeyshually
 ```
 
-Or start as daemon:
-
-```bash
-akeyshually start
+**Open config and add this shortcut:**
+```toml
+[shortcuts]
+'super+shift+a' = "notify-send 'Errm... whassup doc?'"
 ```
+
+Press the combo, notification pops.
+
+**Now here's how to make an auto-clicker:**
+```toml
+"f9.repeat" = "notify-send please help me"
+```
+Tap F9 to trigger, tap again to stop.
 
 ---
 
