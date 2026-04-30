@@ -56,6 +56,13 @@ func Run(
 	ladder := buildTimerLadder(candidates, cfg.Settings.DefaultInterval)
 	common.LogDebug("Ladder %s: timer phases=%v", combo, ladder)
 
+	// Single candidate with no timers = already won, fire immediately
+	if len(candidates) == 1 && len(ladder) == 0 {
+		common.LogDebug(">>> LADDER %s: single candidate no timers, firing immediately", combo)
+		fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, injector, virtual, modifiers, ctx, state)
+		return
+	}
+
 	var timer *time.Timer
 	var timerCh <-chan time.Time
 
@@ -94,6 +101,7 @@ func Run(
 			newCtx, newCancel := context.WithCancel(context.Background())
 			newState := timers.NewComboState(newCancel)
 			stateMap.Set(newCombo, newState)
+			common.LogDebug(">>> ESCAPE: stateMap.Set(%s) done, goroutine launching", newCombo)
 			go Run(newCtx, newState, newCombo, newKey, value, newCandidates, cfg,
 				loopState, injector, virtual, modifiers, stateMap, emittedTracker, shortcuts)
 			return
