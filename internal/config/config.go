@@ -45,6 +45,7 @@ const (
 	BehaviorHoldRelease         // Commands[0] at hold threshold (can be ""), Commands[1] on release after threshold
 	BehaviorTapHold             // tap fires Commands[0], tap-then-hold sustains Commands[1]
 	BehaviorTapLongPress        // tap fires Commands[0], tap-then-longpress fires Commands[1] once
+	BehaviorEscapePending       // pseudo-candidate: prevents early resolution when escape hatches exist
 )
 
 type TimingMode int
@@ -73,6 +74,8 @@ type Config struct {
 
 	// Parsed shortcuts grouped by key combo
 	ParsedShortcuts map[string][]*ParsedShortcut
+	// EscapeMap tracks which combos have child escape hatches (e.g. "super" -> true if "super+w" exists)
+	EscapeMap map[string]bool
 }
 
 // normalizeInterval converts interval values based on heuristic:
@@ -185,6 +188,9 @@ func loadFromFile(configPath string) (*Config, error) {
 		}
 	}
 
+	// Build escape map
+	cfg.EscapeMap = buildEscapeMap(cfg.ParsedShortcuts)
+
 	return cfg, nil
 }
 
@@ -244,6 +250,9 @@ func (c *Config) Merge(overlay *Config) {
 			panic(fmt.Sprintf("BUG: validated shortcut failed to parse during merge: '%s': %v", key, err))
 		}
 	}
+
+	// Rebuild escape map
+	c.EscapeMap = buildEscapeMap(c.ParsedShortcuts)
 }
 
 // loadOverlay loads an overlay config file from the config directory
@@ -320,13 +329,46 @@ func normalizeKey(key string) string {
 	return key
 }
 
-// normalizeKeyCombo normalizes all keys in a combo string
+// normalizeKeyCombo normalizes all keys in a combo string and reorders modifiers
+// into canonical order: super → ctrl → alt → shift → key
 func normalizeKeyCombo(combo string) string {
 	parts := strings.Split(combo, "+")
+
+	// Normalize each part
 	for i, part := range parts {
 		parts[i] = normalizeKey(part)
 	}
-	return strings.Join(parts, "+")
+
+	// Separate modifiers from regular key
+	var modifiers []string
+	var regularKey string
+
+	for _, part := range parts {
+		switch part {
+		case "super", "ctrl", "alt", "shift":
+			modifiers = append(modifiers, part)
+		default:
+			regularKey = part
+		}
+	}
+
+	// Build result in canonical order: super → ctrl → alt → shift → key
+	var result []string
+	for _, mod := range []string{"super", "ctrl", "alt", "shift"} {
+		for _, m := range modifiers {
+			if m == mod {
+				result = append(result, mod)
+				break
+			}
+		}
+	}
+
+	// Append regular key last (if present)
+	if regularKey != "" {
+		result = append(result, regularKey)
+	}
+
+	return strings.Join(result, "+")
 }
 
 // ParseShortcut parses a shortcut key with dot syntax into a ParsedShortcut
@@ -473,6 +515,32 @@ func behaviorName(b BehaviorMode) string {
 	default:
 		return "unknown"
 	}
+}
+
+// buildEscapeMap creates a map of combo prefixes that have child escape hatches.
+// For "super+w", marks "super" -> true. For "super+shift+b", marks both "super" and "super+shift" -> true.
+func buildEscapeMap(shortcuts map[string][]*ParsedShortcut) map[string]bool {
+	escapeMap := make(map[string]bool)
+	for combo := range shortcuts {
+		// Find last '+' and extract prefix
+		lastPlus := strings.LastIndex(combo, "+")
+		if lastPlus == -1 {
+			continue // No prefix (standalone key like "super")
+		}
+		prefix := combo[:lastPlus]
+		escapeMap[prefix] = true
+
+		// Also mark intermediate prefixes (e.g. "super+shift+b" -> mark "super")
+		for {
+			lastPlus = strings.LastIndex(prefix, "+")
+			if lastPlus == -1 {
+				break
+			}
+			prefix = prefix[:lastPlus]
+			escapeMap[prefix] = true
+		}
+	}
+	return escapeMap
 }
 
 func GetConfigDir() (string, error) {
