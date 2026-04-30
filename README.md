@@ -258,7 +258,7 @@ Configure daemon behavior in the `[settings]` section:
 | `shell` | string | `$SHELL` | Shell to use for executing commands (fallback: `sh`) |
 | `env_file` | string | - | File to source before executing commands (e.g., `"~/.profile"`) |
 | `notify_on_overlay_change` | boolean | `false` | Show desktop notifications when overlays are enabled/disabled |
-| `devices` | array | `[]` | Device name substrings to explicitly grab (case-insensitive), e.g. `["Huion", "Xbox"]` |
+| `devices` | array | `[]` | Device name substrings to explicitly grab (case-insensitive), e.g. `["Huion", "Xbox", "PlayStation", "DualShock"]` |
 
 **Example:**
 ```toml
@@ -296,7 +296,13 @@ devices = ["Huion Tablet", "Xbox Controller"]
 
 **CD controls (legacy):** `playcd`, `pausecd`, `stopcd`, `ejectcd`, `closecd`, `ejectclosecd`
 
-**Gamepad:** `btn_south`, `btn_north`, `btn_east`, `btn_west`, `btn_tl`, `btn_tr`, `btn_tl2`, `btn_tr2`, `btn_start`, `btn_select`, `btn_mode`, `btn_thumbl`, `btn_thumbr`
+**Gamepad** (canonical names): `btn_south`, `btn_north`, `btn_east`, `btn_west`, `btn_tl`, `btn_tr`, `btn_tl2`, `btn_tr2`, `btn_start`, `btn_select`, `btn_mode`, `btn_thumbl`, `btn_thumbr`
+
+**Gamepad** (Xbox aliases): `gp_a`, `gp_b`, `gp_x`, `gp_y`, `gp_lb`, `gp_rb`, `gp_lt`, `gp_rt`, `gp_ls`, `gp_rs`, `gp_start`, `gp_select`, `gp_guide`
+
+**Gamepad** (PlayStation aliases): `gp_cross`, `gp_circle`, `gp_square`, `gp_triangle`, `gp_l1`, `gp_r1`, `gp_l2`, `gp_r2`, `gp_l3`, `gp_r3`
+
+> **Note:** Xbox and PlayStation names map to the same buttons. Use whichever matches your controller (e.g., `gp_a` = `gp_cross` = `btn_south`).
 
 **Tablet/generic:** `btn_0`-`btn_9`, `btn_tool_pen`, `btn_touch`, `btn_stylus`, `btn_stylus2`
 
@@ -416,6 +422,44 @@ devices = ["Tablet Monitor Pad"]
 "btn_3" = "notify-send huion btn_3"
 
 "btn_4" = "notify-send huion btn_4"
+```
+
+</details>
+
+<details>
+<summary>And here's an example gamepad overlay (gamepad.toml):</summary>
+
+<br>
+
+```toml
+[settings]
+devices = ["Xbox", "PlayStation"]  # Auto-detects Xbox or PS controllers
+
+[shortcuts]
+# Face buttons - Use Xbox or PlayStation naming (both work!)
+"gp_a" = "playerctl play-pause"              # Xbox A / PS Cross
+"gp_b" = "playerctl next"                    # Xbox B / PS Circle
+"gp_cross" = "playerctl play-pause"          # Same as gp_a
+"gp_circle" = "playerctl next"               # Same as gp_b
+
+# Shoulders/Triggers - Media controls
+"gp_lb" = "volume_down"                      # Left bumper / L1
+"gp_rb" = "volume_up"                        # Right bumper / R1
+"gp_lt.hold" = "brightness_down"             # Left trigger / L2
+"gp_rt.hold" = "brightness_up"               # Right trigger / R2
+
+# Stick clicks
+"gp_ls" = "screenshot"                       # Left stick click / L3
+"gp_rs" = "notify-send 'Right stick!'"       # Right stick click / R3
+
+# System buttons
+"gp_start" = "$LAUNCHER"                     # Start button
+"gp_select.doubletap" = "shutdown-menu"      # Select/Back button
+"gp_guide.hold(1000)" = "lock-screen"        # Guide/Home button
+
+# Combos
+"gp_lb+gp_a" = "take-screenshot"
+"gp_start+gp_select" = "toggle-game-mode"
 ```
 
 </details>

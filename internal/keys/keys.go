@@ -71,6 +71,19 @@ var KeyCodeMap = map[string]uint16{
 	"btn_start": evdev.BTN_START, "btn_select": evdev.BTN_SELECT, "btn_mode": evdev.BTN_MODE,
 	// Gamepad analog stick buttons
 	"btn_thumbl": evdev.BTN_THUMBL, "btn_thumbr": evdev.BTN_THUMBR,
+	// Gamepad aliases - Xbox naming (industry standard layout)
+	"gp_a": evdev.BTN_SOUTH, "gp_b": evdev.BTN_EAST,
+	"gp_x": evdev.BTN_WEST, "gp_y": evdev.BTN_NORTH,
+	"gp_lb": evdev.BTN_TL, "gp_rb": evdev.BTN_TR,
+	"gp_lt": evdev.BTN_TL2, "gp_rt": evdev.BTN_TR2,
+	"gp_ls": evdev.BTN_THUMBL, "gp_rs": evdev.BTN_THUMBR,
+	"gp_start": evdev.BTN_START, "gp_select": evdev.BTN_SELECT, "gp_guide": evdev.BTN_MODE,
+	// Gamepad aliases - PlayStation naming
+	"gp_cross": evdev.BTN_SOUTH, "gp_circle": evdev.BTN_EAST,
+	"gp_square": evdev.BTN_WEST, "gp_triangle": evdev.BTN_NORTH,
+	"gp_l1": evdev.BTN_TL, "gp_r1": evdev.BTN_TR,
+	"gp_l2": evdev.BTN_TL2, "gp_r2": evdev.BTN_TR2,
+	"gp_l3": evdev.BTN_THUMBL, "gp_r3": evdev.BTN_THUMBR,
 	// Tablet pen buttons
 	"btn_tool_pen": evdev.BTN_TOOL_PEN, "btn_touch": evdev.BTN_TOUCH,
 	"btn_stylus": evdev.BTN_STYLUS, "btn_stylus2": evdev.BTN_STYLUS2,
