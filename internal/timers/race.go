@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/deprecatedluar/akeyshually/internal/common"
 	"github.com/deprecatedluar/akeyshually/internal/config"
 )
 
@@ -122,6 +123,55 @@ func (sm *StateMap) CancelCombosWithModifier(modifierName string) []string {
 	}
 
 	return cancelled
+}
+
+// CancelModifierLadders cancels any active lone modifier ladders (super, ctrl, alt, shift)
+func (sm *StateMap) CancelModifierLadders() {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	// Log current active combos
+	activeCombos := make([]string, 0, len(sm.states))
+	for combo := range sm.states {
+		activeCombos = append(activeCombos, combo)
+	}
+	common.LogDebug(">>> MOUSE CLICK: CancelModifierLadders called, active combos=%v", activeCombos)
+
+	modifiers := []string{"super", "ctrl", "alt", "shift"}
+	for _, mod := range modifiers {
+		if state, exists := sm.states[mod]; exists {
+			common.LogDebug(">>> MOUSE CLICK: cancelling modifier ladder %s", mod)
+			state.Cancel()
+			delete(sm.states, mod)
+		}
+	}
+}
+
+// StateMapRegistry holds multiple StateMaps with thread-safe registration and cancellation
+type StateMapRegistry struct {
+	mu       sync.Mutex
+	stateMaps []*StateMap
+}
+
+func NewStateMapRegistry() *StateMapRegistry {
+	return &StateMapRegistry{
+		stateMaps: make([]*StateMap, 0),
+	}
+}
+
+func (r *StateMapRegistry) Register(sm *StateMap) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.stateMaps = append(r.stateMaps, sm)
+}
+
+func (r *StateMapRegistry) CancelAllModifierLadders() {
+	common.LogDebug(">>> MOUSE CLICK: CancelAllModifierLadders called, registry has %d stateMaps", len(r.stateMaps))
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, sm := range r.stateMaps {
+		sm.CancelModifierLadders()
+	}
 }
 
 // EmittedModifierTracker tracks which modifiers we've emitted to system (so we can release them)

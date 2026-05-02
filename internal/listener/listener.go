@@ -447,7 +447,8 @@ func isMouse(dev *evdev.InputDevice) bool {
 
 func isClickButton(code evdev.EvCode) bool {
 	switch code {
-	case evdev.EvCode(evdev.BTN_LEFT), evdev.EvCode(evdev.BTN_RIGHT), evdev.EvCode(evdev.BTN_MIDDLE):
+	case evdev.EvCode(evdev.BTN_LEFT), evdev.EvCode(evdev.BTN_RIGHT), evdev.EvCode(evdev.BTN_MIDDLE),
+		evdev.EvCode(evdev.BTN_TOUCH), evdev.EvCode(evdev.BTN_TOOL_FINGER):
 		return true
 	}
 	return false
