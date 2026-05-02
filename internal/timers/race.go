@@ -44,7 +44,7 @@ type ComboState struct {
 	cancel    context.CancelFunc
 	ReleaseCh chan struct{} // key released
 	PressCh   chan struct{} // second press arrived (doubletap window)
-	EscapeCh  chan uint16   // foreign key pressed (escape hatch to combo)
+	EscapeCh  chan string   // foreign key pressed (escape hatch to combo)
 }
 
 func NewComboState(cancel context.CancelFunc) *ComboState {
@@ -52,7 +52,7 @@ func NewComboState(cancel context.CancelFunc) *ComboState {
 		cancel:    cancel,
 		ReleaseCh: make(chan struct{}, 1),
 		PressCh:   make(chan struct{}, 1),
-		EscapeCh:  make(chan uint16, 1),
+		EscapeCh:  make(chan string, 1),
 	}
 }
 

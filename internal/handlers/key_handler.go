@@ -40,7 +40,7 @@ func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Confi
 					// Escape hatch: valid combo exists, migrate ladder to combo
 					common.LogDebug("Escape hatch: %s ladder migrating to %s", modName, comboKey)
 					select {
-					case state.EscapeCh <- code:
+					case state.EscapeCh <- comboKey:
 					default:
 					}
 					// Ladder goroutine owns migration entirely - return immediately
@@ -91,12 +91,12 @@ func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Confi
 				return false
 			}
 			if state := stateMap.Get(modName); state != nil {
-				comboKey := modName + "+" + keys.GetKeyName(code)
+				comboKey := combo
 				if len(cfg.ParsedShortcuts[comboKey]) > 0 {
 					// Escape hatch: valid combo exists, migrate ladder to combo
 					common.LogDebug("Escape hatch: %s ladder migrating to %s", modName, comboKey)
 					select {
-					case state.EscapeCh <- code:
+					case state.EscapeCh <- combo:
 					default:
 					}
 					// Ladder goroutine owns migration entirely - return immediately

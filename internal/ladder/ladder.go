@@ -89,15 +89,27 @@ func Run(
 			}
 			return
 
-		case newKey := <-state.EscapeCh:
+		case newCombo := <-state.EscapeCh:
 			// Foreign key pressed - migrate ladder to combo
-			newCombo := combo + "+" + keys.GetKeyName(newKey)
 			common.LogDebug(">>> LADDER %s: ESCAPE HATCH → migrating to %s", combo, newCombo)
 			if timer != nil {
 				timer.Stop()
 			}
 			// stateMap already has modifier entry — delete it, new combo will register itself
 			stateMap.Delete(combo)
+
+			// Extract the final key code from the combo for passing to Run
+			lastPlusIdx := strings.LastIndex(newCombo, "+")
+			if lastPlusIdx == -1 {
+				common.LogDebug(">>> ESCAPE: invalid combo format %s, aborting", newCombo)
+				return
+			}
+			keyName := newCombo[lastPlusIdx+1:]
+			newKey, ok := keys.ResolveKeyCode(keyName)
+			if !ok {
+				common.LogDebug(">>> ESCAPE: failed to resolve key %s from combo %s, aborting", keyName, newCombo)
+				return
+			}
 
 			// Build new combo string
 			newShortcuts := shortcuts[newCombo] // already confirmed non-empty in HandlePress
