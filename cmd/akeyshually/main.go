@@ -224,6 +224,9 @@ func run(configPath string) {
 
 	var wg sync.WaitGroup
 
+	// Registry for thread-safe StateMap collection and mouse click cancellation
+	registry := timers.NewStateMapRegistry()
+
 	// Launch keyboard listeners with unified handler and reconnect support
 	for _, pair := range keyboardPairs {
 		wg.Add(1)
@@ -231,6 +234,7 @@ func run(configPath string) {
 		go func(p listener.KeyboardPair, devName string) {
 			defer wg.Done()
 			stateMap := timers.NewStateMap()
+			registry.Register(stateMap)
 			emittedTracker := timers.NewEmittedModifierTracker()
 			handler := func(code uint16, value int32) bool {
 				if cfg.Settings.DisableMediaKeys && listener.IsMediaKey(code) {
@@ -258,6 +262,7 @@ func run(configPath string) {
 		go func(p listener.KeyboardPair, devName string) {
 			defer wg.Done()
 			stateMap := timers.NewStateMap()
+			registry.Register(stateMap)
 			emittedTracker := timers.NewEmittedModifierTracker()
 			handler := func(code uint16, value int32) bool {
 				if cfg.Settings.DisableMediaKeys && listener.IsMediaKey(code) {
@@ -285,7 +290,10 @@ func run(configPath string) {
 			wg.Add(1)
 			go func(dev evdev.InputDevice) {
 				defer wg.Done()
-				if err := listener.ListenMouse(&dev, tapState.Clear); err != nil {
+				if err := listener.ListenMouse(&dev, func() {
+					tapState.Clear()
+					registry.CancelAllModifierLadders()
+				}); err != nil {
 					fmt.Fprintf(os.Stderr, "Mouse listener error: %v\n", err)
 				}
 			}(*mouse)

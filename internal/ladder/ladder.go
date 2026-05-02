@@ -58,6 +58,9 @@ func Run(
 		candidates = append(candidates, timers.NewEscapeCandidate())
 	}
 
+	// Handle transparent press (modifier .pressrelease with empty press command)
+	handleTransparentPress(combo, candidates, virtual, emittedTracker)
+
 	// Build timer ladder: sorted unique thresholds
 	ladder := buildTimerLadder(candidates, cfg.Settings.DefaultInterval)
 	common.LogDebug("Ladder %s: timer phases=%v", combo, ladder)
@@ -223,6 +226,26 @@ func Run(
 				// No more timers, but survivors remain - continue waiting for ReleaseCh/PressCh/EscapeCh
 				common.LogDebug("Ladder %s: timer exhausted, %d survivors remain (waiting for events)", combo, len(candidates))
 			}
+		}
+	}
+}
+
+// handleTransparentPress emits modifier keydown for .pressrelease shortcuts with empty press command.
+// This allows modifiers to pass through to the system on initial press when configured as transparent.
+func handleTransparentPress(combo string, candidates []timers.Candidate, virtual *evdev.InputDevice, emittedTracker *timers.EmittedModifierTracker) {
+	// Only runs if combo is a lone modifier
+	if !isModifierCombo(combo) {
+		return
+	}
+
+	// Look for BehaviorPressRelease with empty press command
+	for _, c := range candidates {
+		if c.Shortcut.Behavior == config.BehaviorPressRelease && len(c.Shortcut.Commands) > 0 && c.Shortcut.Commands[0] == "" {
+			// Emit modifier keydown and mark as emitted
+			common.LogDebug("handleTransparentPress: emitting %s keydown (transparent .pressrelease)", combo)
+			EmitModifierKey(virtual, keys.ResolveKeyCode, combo, true)
+			emittedTracker.MarkEmitted(combo)
+			return
 		}
 	}
 }
