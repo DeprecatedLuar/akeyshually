@@ -55,7 +55,7 @@ var KeyCodeMap = map[string]uint16{
 	"ejectcd":       evdev.KEY_EJECTCD, "closecd": evdev.KEY_CLOSECD, "ejectclosecd": evdev.KEY_EJECTCLOSECD,
 	"calc":          evdev.KEY_CALC, "calculator": evdev.KEY_CALC,
 	// Modifier keys
-	"super": evdev.KEY_LEFTMETA, "ctrl": evdev.KEY_LEFTCTRL,
+	"super": evdev.KEY_LEFTMETA, "ctrl": evdev.KEY_LEFTCTRL, "ctl": evdev.KEY_LEFTCTRL,
 	"alt":   evdev.KEY_LEFTALT, "shift": evdev.KEY_LEFTSHIFT,
 	// Generic/tablet buttons (BTN_0..BTN_9)
 	"btn_0": evdev.BTN_0, "btn_1": evdev.BTN_1, "btn_2": evdev.BTN_2, "btn_3": evdev.BTN_3,
@@ -87,6 +87,21 @@ var KeyCodeMap = map[string]uint16{
 	// Tablet pen buttons
 	"btn_tool_pen": evdev.BTN_TOOL_PEN, "btn_touch": evdev.BTN_TOUCH,
 	"btn_stylus": evdev.BTN_STYLUS, "btn_stylus2": evdev.BTN_STYLUS2,
+	// Output aliases for scroll/wheel (map to REL codes for remap output)
+	"scrollup": evdev.REL_WHEEL, "scrolldown": evdev.REL_WHEEL,
+	"scrollleft": evdev.REL_HWHEEL, "scrollright": evdev.REL_HWHEEL,
+	"wheelup": evdev.REL_WHEEL, "wheeldown": evdev.REL_WHEEL,
+	"wheelleft": evdev.REL_HWHEEL, "wheelright": evdev.REL_HWHEEL,
+}
+
+// AxisCodeMap maps axis names to evdev ABS codes (separate from KeyCodeMap)
+var AxisCodeMap = map[string]uint16{
+	// Canonical names
+	"abs_x": evdev.ABS_X, "abs_y": evdev.ABS_Y, "abs_z": evdev.ABS_Z,
+	"abs_rx": evdev.ABS_RX, "abs_ry": evdev.ABS_RY, "abs_rz": evdev.ABS_RZ,
+	// Shorthands (note: x/y/z are keyboard keys, so use abs_ prefix or rx/ry/rz which don't conflict)
+	"x": evdev.ABS_X, "y": evdev.ABS_Y, "z": evdev.ABS_Z,
+	"rx": evdev.ABS_RX, "ry": evdev.ABS_RY, "rz": evdev.ABS_RZ,
 }
 
 // CodeToNameMap is a reverse lookup map for O(1) code -> name lookups (exported for testing)
@@ -163,6 +178,12 @@ func GetAbsName(code uint16) string {
 // ResolveKeyCode looks up a key name and returns its evdev code.
 func ResolveKeyCode(name string) (uint16, bool) {
 	code, ok := KeyCodeMap[strings.ToLower(name)]
+	return code, ok
+}
+
+// ResolveAbsCode looks up an axis name and returns its evdev ABS code.
+func ResolveAbsCode(name string) (uint16, bool) {
+	code, ok := AxisCodeMap[strings.ToLower(name)]
 	return code, ok
 }
 

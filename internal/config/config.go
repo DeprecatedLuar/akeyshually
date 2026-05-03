@@ -56,15 +56,17 @@ const (
 )
 
 type ParsedShortcut struct {
-	KeyCombo    string       // "super+k" (without suffix)
-	Behavior    BehaviorMode
-	Timing      TimingMode
-	Repeat      bool     // stacks on any trigger; stop condition follows trigger semantics
-	Interval    float64  // Milliseconds (0 = use default) — tap window for taphold
-	HoldInterval float64 // Milliseconds (0 = use default) — hold threshold for taphold
-	Commands    []string // Single command OR switch array
-	Passthrough bool     // Ignore modifiers when matching
-	AliasGroup  string   // Canonical key for shared state (e.g. "f1/f2.switch"), empty if not an alias
+	KeyCombo     string       // "super+k" (without suffix)
+	Behavior     BehaviorMode
+	Timing       TimingMode
+	Repeat       bool     // stacks on any trigger; stop condition follows trigger semantics
+	Interval     float64  // Milliseconds (0 = use default) — tap window for taphold
+	HoldInterval float64  // Milliseconds (0 = use default) — hold threshold for taphold
+	Commands     []string // Single command OR switch array
+	Passthrough  bool     // Ignore modifiers when matching
+	AliasGroup   string   // Canonical key for shared state (e.g. "f1/f2.switch"), empty if not an alias
+	Direction    string   // For axis shortcuts: "+", "-", or "" (both)
+	Sensitivity  float64  // For axis shortcuts: fires per full sweep (0 = use default)
 }
 
 type Config struct {
@@ -147,7 +149,12 @@ func parseShortcutsInto(dst map[string][]*ParsedShortcut, key string, value inte
 			return err
 		}
 		parsed.AliasGroup = aliasGroup
-		dst[parsed.KeyCombo] = append(dst[parsed.KeyCombo], parsed)
+		// Include direction in map key for axis shortcuts
+		mapKey := parsed.KeyCombo
+		if parsed.Direction != "" {
+			mapKey = parsed.KeyCombo + parsed.Direction
+		}
+		dst[mapKey] = append(dst[mapKey], parsed)
 	}
 	return nil
 }
@@ -380,12 +387,25 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 		return nil, fmt.Errorf("empty shortcut key")
 	}
 
+	// Extract direction suffix for axis shortcuts (e.g., "RX+" → direction "+", combo "RX")
+	combo := parts[0]
+	direction := ""
+	if strings.HasSuffix(combo, "+") {
+		direction = "+"
+		combo = strings.TrimSuffix(combo, "+")
+	} else if strings.HasSuffix(combo, "-") {
+		direction = "-"
+		combo = strings.TrimSuffix(combo, "-")
+	}
+
 	shortcut := &ParsedShortcut{
-		KeyCombo:    normalizeKeyCombo(parts[0]),
+		KeyCombo:    normalizeKeyCombo(combo),
 		Behavior:    BehaviorNormal,
 		Timing:      TimingPress,
 		Interval:    0, // 0 means use default
 		Passthrough: false,
+		Direction:   direction,
+		Sensitivity: 0, // 0 means use default
 	}
 
 	// Parse value (string or array)

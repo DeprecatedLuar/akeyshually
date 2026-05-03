@@ -143,8 +143,9 @@ func validateShortcutEntry(key string, value interface{}, filePath string, line 
 		}
 	}
 
-	// Validate all keys in the combo exist
-	if err := validateKeysExist(parsed.KeyCombo); err != nil {
+	// Validate all keys in the combo exist (use original key to preserve +/- suffix)
+	comboToValidate := strings.Split(key, ".")[0] // Get combo part before behavior modifiers
+	if err := validateKeysExist(comboToValidate); err != nil {
 		return ValidationError{
 			File:    filePath,
 			Line:    line,
@@ -172,12 +173,30 @@ func validateKeysExist(combo string) error {
 	// Split on / for aliases first
 	aliases := strings.Split(combo, "/")
 	for _, alias := range aliases {
+		// Check if this is an axis shortcut (ends with +/-)
+		isAxis := strings.HasSuffix(alias, "+") || strings.HasSuffix(alias, "-")
+
+		// Strip direction suffix for axis shortcuts (e.g., "RX+" → "RX")
+		if isAxis {
+			alias = strings.TrimSuffix(alias, "+")
+			alias = strings.TrimSuffix(alias, "-")
+		}
+
 		// Then split on + for key combos
 		parts := strings.Split(alias, "+")
-		for _, part := range parts {
+		for i, part := range parts {
 			keyName := strings.ToLower(strings.TrimSpace(part))
-			if _, ok := keys.ResolveKeyCode(keyName); !ok {
-				return fmt.Errorf("unknown key: %s", keyName)
+
+			// For axis shortcuts, the final part should be an axis name
+			if isAxis && i == len(parts)-1 {
+				if _, ok := keys.ResolveAbsCode(keyName); !ok {
+					return fmt.Errorf("unknown axis: %s", keyName)
+				}
+			} else {
+				// Regular key validation
+				if _, ok := keys.ResolveKeyCode(keyName); !ok {
+					return fmt.Errorf("unknown key: %s", keyName)
+				}
 			}
 		}
 	}

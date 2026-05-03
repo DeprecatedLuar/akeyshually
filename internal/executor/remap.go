@@ -54,6 +54,10 @@ func runRemap(cmd string, ctx ExecContext) {
 	case strings.HasPrefix(cmd, RemapTap):
 		// Tap key combo (>)
 		target := cmd[1:]
+		// Check for scroll/wheel output aliases
+		if emitScrollWheel(ctx.Injector, target) {
+			return
+		}
 		if err := EmitKeyCombo(ctx.Injector, target, ctx.Modifiers); err != nil {
 			fmt.Fprintf(os.Stderr, "Remap error: %v\n", err)
 		}
@@ -150,5 +154,41 @@ func isModifierHeld(code uint16, held matcher.ModifierState) bool {
 	case evdev.KEY_LEFTSHIFT, evdev.KEY_RIGHTSHIFT:
 		return held.Shift
 	}
+	return false
+}
+
+// emitScrollWheel emits REL_WHEEL/REL_HWHEEL events for scroll/wheel output aliases
+// Returns true if the target was a scroll/wheel alias, false otherwise
+func emitScrollWheel(injector *evdev.InputDevice, target string) bool {
+	if injector == nil {
+		return false
+	}
+
+	target = strings.ToLower(strings.TrimSpace(target))
+
+	switch target {
+	case "scrollup", "wheelup":
+		injector.WriteOne(&evdev.InputEvent{Type: evdev.EV_REL, Code: evdev.REL_WHEEL, Value: 1})
+		injector.WriteOne(&evdev.InputEvent{Type: evdev.EV_REL, Code: evdev.REL_WHEEL_HI_RES, Value: 120})
+		injector.WriteOne(&evdev.InputEvent{Type: evdev.EV_SYN, Code: evdev.SYN_REPORT, Value: 0})
+		return true
+
+	case "scrolldown", "wheeldown":
+		injector.WriteOne(&evdev.InputEvent{Type: evdev.EV_REL, Code: evdev.REL_WHEEL, Value: -1})
+		injector.WriteOne(&evdev.InputEvent{Type: evdev.EV_REL, Code: evdev.REL_WHEEL_HI_RES, Value: -120})
+		injector.WriteOne(&evdev.InputEvent{Type: evdev.EV_SYN, Code: evdev.SYN_REPORT, Value: 0})
+		return true
+
+	case "scrollleft", "wheelleft":
+		injector.WriteOne(&evdev.InputEvent{Type: evdev.EV_REL, Code: evdev.REL_HWHEEL, Value: -1})
+		injector.WriteOne(&evdev.InputEvent{Type: evdev.EV_SYN, Code: evdev.SYN_REPORT, Value: 0})
+		return true
+
+	case "scrollright", "wheelright":
+		injector.WriteOne(&evdev.InputEvent{Type: evdev.EV_REL, Code: evdev.REL_HWHEEL, Value: 1})
+		injector.WriteOne(&evdev.InputEvent{Type: evdev.EV_SYN, Code: evdev.SYN_REPORT, Value: 0})
+		return true
+	}
+
 	return false
 }

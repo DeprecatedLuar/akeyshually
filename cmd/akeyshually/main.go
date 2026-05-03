@@ -236,7 +236,33 @@ func run(configPath string) {
 			stateMap := timers.NewStateMap()
 			registry.Register(stateMap)
 			emittedTracker := timers.NewEmittedModifierTracker()
+
+			// ABS handler state (per device)
+			absInfoMap := handlers.BuildAbsInfoMap(p.Physical)
+			accumulators := make(handlers.AccumulatorMap)
+			prevValues := make(handlers.PrevValuesMap)
+			contactState := false
+
+			execCtx := executor.ExecContext{
+				Modifiers: m.GetCurrentModifiers(),
+				LoopState: loopState,
+				Injector:  injector,
+				Virtual:   p.Virtual,
+			}
+
 			handler := func(code uint16, value int32) bool {
+				// SYN event (flush accumulators)
+				if code == 0xFFFF {
+					handlers.FlushAbs(accumulators, absInfoMap, cfg, execCtx)
+					return false
+				}
+
+				// ABS event
+				if code < 0x40 { // ABS codes are 0x00-0x3f
+					return handlers.HandleAbs(code, value, absInfoMap, accumulators, prevValues, &contactState, cfg, execCtx)
+				}
+
+				// KEY event
 				if cfg.Settings.DisableMediaKeys && listener.IsMediaKey(code) {
 					return false
 				}
@@ -264,7 +290,33 @@ func run(configPath string) {
 			stateMap := timers.NewStateMap()
 			registry.Register(stateMap)
 			emittedTracker := timers.NewEmittedModifierTracker()
+
+			// ABS handler state (per device)
+			absInfoMap := handlers.BuildAbsInfoMap(p.Physical)
+			accumulators := make(handlers.AccumulatorMap)
+			prevValues := make(handlers.PrevValuesMap)
+			contactState := false
+
+			execCtx := executor.ExecContext{
+				Modifiers: m.GetCurrentModifiers(),
+				LoopState: loopState,
+				Injector:  injector,
+				Virtual:   p.Virtual,
+			}
+
 			handler := func(code uint16, value int32) bool {
+				// SYN event (flush accumulators)
+				if code == 0xFFFF {
+					handlers.FlushAbs(accumulators, absInfoMap, cfg, execCtx)
+					return false
+				}
+
+				// ABS event
+				if code < 0x40 { // ABS codes are 0x00-0x3f
+					return handlers.HandleAbs(code, value, absInfoMap, accumulators, prevValues, &contactState, cfg, execCtx)
+				}
+
+				// KEY event
 				if cfg.Settings.DisableMediaKeys && listener.IsMediaKey(code) {
 					return false
 				}

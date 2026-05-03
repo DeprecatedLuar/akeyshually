@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/deprecatedluar/akeyshually/internal/common"
-	"github.com/deprecatedluar/akeyshually/internal/keys"
 	evdev "github.com/holoplot/go-evdev"
 )
 
@@ -243,16 +242,19 @@ func Listen(pair KeyboardPair, handler KeyHandler) error {
 			return fmt.Errorf("read error: %w", err)
 		}
 
-		if event.Type == evdev.EV_KEY {
+		switch event.Type {
+		case evdev.EV_KEY, evdev.EV_ABS:
 			matched := handler(uint16(event.Code), event.Value)
 			if !matched {
 				pair.Virtual.WriteOne(event)
 			}
-		} else {
-			// Forward all non-key events immediately
-			if event.Type == evdev.EV_ABS && common.IsLoggingEnabled() {
-				common.LogKey(keys.GetAbsName(uint16(event.Code)), uint16(event.Code))
-			}
+		case evdev.EV_SYN:
+			// Use sentinel value 0xFFFF for SYN events (not a valid key/abs code)
+			handler(0xFFFF, event.Value)
+			// Always forward SYN regardless of handler return
+			pair.Virtual.WriteOne(event)
+		default:
+			// Forward all other events immediately
 			pair.Virtual.WriteOne(event)
 		}
 	}
@@ -481,7 +483,10 @@ func CreateKeyInjector() (*evdev.InputDevice, error) {
 		codes[i] = evdev.EvCode(i + 1)
 	}
 	return evdev.CreateDevice(injectorDeviceName, evdev.InputID{BusType: injectorBusType, Vendor: injectorVendorID, Product: injectorProductID, Version: injectorVersion},
-		map[evdev.EvType][]evdev.EvCode{evdev.EV_KEY: codes})
+		map[evdev.EvType][]evdev.EvCode{
+			evdev.EV_KEY: codes,
+			evdev.EV_REL: []evdev.EvCode{evdev.REL_WHEEL, evdev.REL_HWHEEL, evdev.REL_WHEEL_HI_RES, evdev.REL_HWHEEL_HI_RES},
+		})
 }
 
 
