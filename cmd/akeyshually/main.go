@@ -257,8 +257,8 @@ func run(configPath string) {
 					return false
 				}
 
-				// ABS event
-				if code < 0x40 { // ABS codes are 0x00-0x3f
+				// ABS event (check if code exists in device's ABS capabilities)
+				if _, isAbs := absInfoMap[code]; isAbs {
 					return handlers.HandleAbs(code, value, absInfoMap, accumulators, prevValues, &contactState, cfg, execCtx)
 				}
 
@@ -311,8 +311,8 @@ func run(configPath string) {
 					return false
 				}
 
-				// ABS event
-				if code < 0x40 { // ABS codes are 0x00-0x3f
+				// ABS event (check if code exists in device's ABS capabilities)
+				if _, isAbs := absInfoMap[code]; isAbs {
 					return handlers.HandleAbs(code, value, absInfoMap, accumulators, prevValues, &contactState, cfg, execCtx)
 				}
 

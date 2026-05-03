@@ -15,3 +15,5 @@ require (
 )
 
 replace github.com/DeprecatedLuar/the-satellite/the-lib => ./pkg/the-lib
+
+replace github.com/deprecatedluar/luar-daemonator => /home/luar/Workspace/dev/luar-daemonator
