@@ -7,16 +7,6 @@
 "Any button, any input from any peripheral, triggers anything on your system" <br>
 [Install](#installation) • [Commands](#commands) • [Configuration](#configuration) • [Behaviors](#behaviors) • [Key Names](#key-names)
 
-<br>
-
-Errm... Akeyshually, this is NOT a keyboard remapper but an
-evdev-based userspace daemon configured in TOML that intercepts
-raw input events from any evdev hardware, performs stateful
-modifier tracking, and executes arbitrary shell commands through
-a fire-and-forget subprocess model regardless of session type or
-graphical environment manager. And it also does remapping.
-
-<br><br>
 
 <a href="https://github.com/DeprecatedLuar/akeyshually/stargazers">
   <img src="https://img.shields.io/github/stars/DeprecatedLuar/akeyshually?style=for-the-badge&logo=github&color=1f6feb&logoColor=white&labelColor=black"/>
@@ -32,7 +22,20 @@ graphical environment manager. And it also does remapping.
 
 ---
 
-<!-- TODO: Add demo GIF showcasing key features and workflows -->
+> Errm... Akeyshually, this is NOT a keyboard remapper but an
+evdev-based userspace daemon configured in TOML that intercepts
+raw input events from any evdev hardware, performs stateful
+modifier tracking, and executes arbitrary shell commands through
+a fire-and-forget subprocess model regardless of session type or
+graphical environment manager. And it also does remapping. 
+
+<br>
+
+<div align="center">
+  <img src="other/assets/akeyshually-config-demo.gif" alt="akeyshually demo" width="800">
+</div>
+
+---
 
 ## Installation
 
@@ -84,7 +87,7 @@ mv akeyshually ~/.local/bin/
 
 ## The ludicrous features you've never seen before
 
-<img src="other/assets/ermactually.jpeg" alt="Actually..." align="right" width="200"/>
+<img src="other/assets/solo-lvln-2:3.webp" alt="Hardware bowing to akeyshually" align="right" width="300"/>
 
 *I'd check out the [Overlay System](#overlay-system) and [Behaviors](#behaviors). That's where it gets fun.*
 
@@ -100,8 +103,6 @@ mv akeyshually ~/.local/bin/
 
 ## Quick Start
 
-<!-- demo gif -->
-
 **Prerequisites:**
 ```bash
 # Add yourself to the input group (first time only)
@@ -113,6 +114,8 @@ sudo usermod -aG input $USER
 ```bash
 akeyshually
 ```
+
+<img src="other/assets/ermactually.jpeg" alt="Nerd cat" align="left" width="200"/>
 
 **Open config and add this shortcut:**
 ```toml
@@ -470,15 +473,19 @@ devices = ["Xbox", "PlayStation"]  # Auto-detects Xbox or PS controllers
 
 ## Overlay System
 
-Overlay configs let you enable/disable groups of shortcuts dynamically without editing the main `config.toml`.
+This is an override thingie I made to let you enable/disable groups of shortcuts dynamically without any conflicts what so ever and not editing the main `config.toml`.
+
+It's _actually_ very powerful since any config file just works.
 
 **Use Cases:**
-- **Gaming mode**: Override window manager shortcuts while gaming
-- **Work profiles**: Different shortcuts for different projects/contexts
+- **Gaming**: Override window manager shortcuts so you don't start 9001 instances of firefox.
+- **Work profiles**: Different shortcuts for different projects/contexts or programs.
 - **Application-specific**: Load shortcuts for specific tools (DAW, IDE, browser, etc.)
 
+<img src="other/assets/nerdog.webp" alt="Nerd dog" align="right" width="200"/>
+
 **How it works:**
-1. Base config (`config.toml`) is always loaded first
+1. Base config (`config.toml`) is always loaded first (I'll change that in the future)
 2. Enabled overlays merge on top, overriding base shortcuts
 3. `[shortcuts]` and `[command_variables]` from overlays override base
 4. `devices` from overlays are appended (deduplicated)
@@ -550,9 +557,13 @@ Enable with: `akeyshually enable streaming` (`.toml` extension optional)
 
 ## Why
 
-Every shortcuts manager is coupled to your display server (X11 vs Wayland), your window manager (sway vs Hyprland vs i3), and your current machine.
+> When life gives you lemons, don't make lemonade. Make life take the lemons back! GET MAD! I don't want your damn lemons, what the heck am I supposed to do with these?!?
 
-I made akeyshually to not only have my configs in a single git tracked file, but to work anywhere I want.
+It's very simple, I used to use gnome then I switched from gnome and my shortcuts got vaporized.
+
+So I made something that could store my keybinds across anything. Then I realized the backend could do a lot more stuff that I was in need of like getting my Huion Kamvas Pro 13 touchstrip thing to work on linux since nobody cares about nixos support.
+
+>  Do you know who I am? I'm the man who's gonna burn your house down! With the lemons! I'm gonna get my engineers to invent a combustible lemon that burns your house down! 
 
 ---
 

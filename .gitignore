@@ -12,6 +12,7 @@ dist/
 build/
 _*
 !__*
+*.png
 
 # IDE files
 .vscode/
