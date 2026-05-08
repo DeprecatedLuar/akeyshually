@@ -160,6 +160,11 @@ Config lives at `~/.config/akeyshually/`:
 - Share command across multiple keys: `"f1/f2/f3.switch" = ["cmd1", "cmd2"]`
 - Dot modifiers from the last key apply to all: `"a/b.hold"` = `"a.hold"` + `"b.hold"`
 
+**Axis syntax:**
+- Axis direction: `"rx+"`, `"abs_y-"` (axis name + direction suffix)
+- Remap to scroll: `"rx+" = ">scrollup"`, `"abs_y-" = ">scrolldown"`
+- Works with drawing tablets, gamepads, trackballs, any ABS device
+
 **Commands:**
 - Direct: `"super+t" = "kitty"`
 - Command variable: `"super+t" = "$TERMINAL"` or `"super+t" = "terminal"` (references `[command_variables]`)
@@ -309,6 +314,10 @@ devices = ["Huion Tablet", "Xbox Controller"]
 
 **Tablet/generic:** `btn_0`-`btn_9`, `btn_tool_pen`, `btn_touch`, `btn_stylus`, `btn_stylus2`
 
+**Axis (absolute):** `x`, `y`, `z`, `rx`, `ry`, `rz`, `abs_x`, `abs_y`, `abs_z`, `abs_rx`, `abs_ry`, `abs_rz`
+- Use with direction suffix: `"rx+"`, `"abs_y-"`
+- Remap to scroll: `">scrollup"`, `">scrolldown"`, `">scrollleft"`, `">scrollright"` (or `">wheelup"`, `">wheeldown"`, `">wheelleft"`, `">wheelright"`)
+
 **Other:** `102nd`, `ro`
 
 </details>
@@ -410,9 +419,14 @@ mic_down = "wpctl set-volume @DEFAULT_AUDIO_SOURCE@ 5%-"
 
 ```toml
 [settings]
-devices = ["Tablet Monitor Pad"]
+devices = ["Tablet Monitor Pad", "Tablet Monitor Touch Strip"]
 
 [shortcuts]
+# Touchstrip axis → scroll (the reason this project exists!)
+"rx-" = ">scrollup"
+"rx+" = ">scrolldown"
+
+# Tablet buttons
 "btn_0" = ">ctrl+z"
 "btn_0.hold" = ">ctrl+shift+z"
 
@@ -420,10 +434,7 @@ devices = ["Tablet Monitor Pad"]
 "btn_1.hold" = ">ctrl"
 "btn_1.taphold" = ">shift"
 
-"btn_2" = "ydotool key 44:1 44:0"
-
 "btn_3" = "notify-send huion btn_3"
-
 "btn_4" = "notify-send huion btn_4"
 ```
 
@@ -468,6 +479,32 @@ devices = ["Xbox", "PlayStation"]  # Auto-detects Xbox or PS controllers
 </details>
 
 </details>
+
+---
+
+## Axis & Peripheral Support
+
+<img src="other/assets/lovecowboy.webp" alt="Drawing tablet support" align="right" width="200"/>
+
+**akeyshually** supports absolute axis (ABS) events from evdev devices, its an absolute nerd term to say that you can bind:
+- **Drawing tablet touchstrips/wheels** - Map touchstrip to scroll, zoom, brush size, etc.
+- **Gamepad analog sticks** - Bind stick movement to commands or scroll
+- **Trackballs** - Use scroll rings or additional axes
+- **Any peripheral with axis input** - If it reports ABS events, it (probably) works
+
+Its still experimental but works, just need more testing and refinement.
+
+**Axis syntax:**
+```toml
+[shortcuts]
+"rx+" = ">scrollup"      # Axis RX positive direction → scroll up
+"rx-" = ">scrolldown"    # Axis RX negative direction → scroll down
+"abs_y+" = "volume_up"   # Any axis works, any command works
+```
+
+**Why? You stupid or smt?:** The entire reason this project feature exists (besides being a natural extension) was to get my Huion Kamvas Pro 13 touchstrip working on NixOS. Traditional shortcut tools only handle keyboard events but have the entire boilerplate backend sitting on there to handle this as well. So I just made any hardware first-class.
+
+See the [Huion overlay example](#personal-config) above for the full config that makes touchstrip scrolling work. and stuff. idk you do you.
 
 ---
 
@@ -534,7 +571,7 @@ Enable with: `akeyshually enable streaming` (`.toml` extension optional)
 
 ---
 
-<img src="other/assets/lovecowboy.webp" alt="Actually..." align="left" width="200"/>
+<!-- <img src="other/assets/lovecowboy.webp" alt="Actually..." align="left" width="200"/> -->
 
 ## CLI Commands
 
