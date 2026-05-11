@@ -29,23 +29,27 @@ var (
 	helpConfig = gohelp.NewPage("config", "configuration file documentation").
 		Text("Config File: ~/.config/akeyshually/config.toml").
 		Section("[settings]",
-			gohelp.Item("default_interval", "Default interval for repeat behaviors (milliseconds, default: 150)"),
-			gohelp.Item("disable_media_keys", "Forward media keys to system (default: false)"),
-			gohelp.Item("shell", "Shell to use for commands (default: $SHELL, fallback: sh)"),
-			gohelp.Item("env_file", "File to source before command execution (optional)"),
-			gohelp.Item("notify_on_overlay_change", "Desktop notifications when overlays change (default: false)"),
+			gohelp.Item("default_interval", "Default interval for repeat behaviors (milliseconds)", "default_interval = 150"),
+			gohelp.Item("disable_media_keys", "Forward media keys to system", "disable_media_keys = false"),
+			gohelp.Item("shell", "Shell to use for commands (default: $SHELL, fallback: sh)", "shell = \"/bin/bash\""),
+			gohelp.Item("env_file", "File to source before command execution", "env_file = \"~/.profile\""),
+			gohelp.Item("notify_on_overlay_change", "Desktop notifications when overlays change", "notify_on_overlay_change = true"),
 			gohelp.Item("devices", "List of device name substrings to grab (case-insensitive)", "devices = [\"Huion\", \"Xbox Controller\"]"),
 		).
-		Text("[settings]\ndefault_interval = 150\ndisable_media_keys = false\nshell = \"/bin/bash\"\nenv_file = \"~/.profile\"\nnotify_on_overlay_change = false").
 		Section("[shortcuts]",
 			gohelp.Item("Key modifiers", "super, ctrl, alt, shift (lowercase, no left/right distinction)"),
 			gohelp.Item("Keys", "lowercase letters, numbers, special keys (print, space, etc.)"),
 			gohelp.Item("Axis inputs", "x, y, z, rx, ry, rz, abs_x, abs_y, etc. with +/- direction (see 'help axis')"),
-			gohelp.Item("Syntax", "Use + to separate modifiers and key"),
+			gohelp.Item("Syntax", "Use + to separate modifiers and key", "\"super+t\" = \"alacritty\""),
 			gohelp.Item("Triggers", ".onpress (default), .hold, .doubletap, .taphold, .pressrelease, .longpress, etc."),
 			gohelp.Item("Modifiers", ".switch, .repeat, .passthrough"),
 		).
-		Text("[shortcuts]\n\"super.pressrelease\" = [\"\", \"rofi\"]  # Tap modifier key\n\"super+t\" = \"alacritty\"\n\"f9.onpress.repeat\" = \"xdotool click 1\"  # Toggle auto-clicker\n\"rx+\" = \">scrollup\"  # Axis input (drawing tablet touchstrip)").
+		Section("Examples",
+			gohelp.Item("Tap modifier key", "Execute command on modifier release", "\"super.pressrelease\" = [\"\", \"rofi\"]"),
+			gohelp.Item("Launch terminal", "Simple key combo", "\"super+t\" = \"alacritty\""),
+			gohelp.Item("Toggle auto-clicker", "Repeat while held or toggle on press", "\"f9.onpress.repeat\" = \"xdotool click 1\""),
+			gohelp.Item("Axis scrolling", "Touchstrip or peripheral axis input", "\"rx+\" = \">scrollup\""),
+		).
 		Section("[command_variables]",
 			gohelp.Item("browser", "Reusable command alias", "browser = \"brave-browser --new-window\""),
 			gohelp.Item("terminal", "Reusable command alias", "terminal = \"alacritty --working-directory ~\""),
@@ -66,15 +70,14 @@ var (
 		).
 		Section("Commands",
 			gohelp.Item("enable gaming.toml", "Enable overlay and restart daemon", "akeyshually enable gaming.toml"),
-			gohelp.Item("disable gaming.toml", "Disable overlay and restart daemon"),
-			gohelp.Item("list", "Show all config files and their status"),
-			gohelp.Item("clear", "Disable all overlays"),
-			gohelp.Item("config gaming", "Edit gaming.toml overlay"),
+			gohelp.Item("disable gaming.toml", "Disable overlay and restart daemon", "akeyshually disable gaming.toml"),
+			gohelp.Item("list", "Show all config files and their status", "akeyshually list"),
+			gohelp.Item("clear", "Disable all overlays", "akeyshually clear"),
+			gohelp.Item("config gaming", "Edit gaming.toml overlay", "akeyshually config gaming"),
 		).
 		Section("Settings",
-			gohelp.Item("notify_on_overlay_change", "Desktop notifications when overlays change (default: false)"),
-		).
-		Text("Enable in config.toml:\n[settings]\nnotify_on_overlay_change = true")
+			gohelp.Item("notify_on_overlay_change", "Desktop notifications when overlays change", "notify_on_overlay_change = true"),
+		)
 
 	helpModifiers = gohelp.NewPage("modifiers", "triggers and modifiers syntax reference").
 		Text("Triggers define when the action fires. Modifiers stack on top to change execution behavior.").
@@ -87,13 +90,18 @@ var (
 			gohelp.Item(".longpress(ms)", "Fire once after threshold (one-shot)", "\"super+h.longpress(1000)\" = \"shutdown\""),
 			gohelp.Item(".holdrelease(ms)", "Execute at hold threshold AND on release (2-command array)", "\"mute.holdrelease(500)\" = [\"enable-mic\", \"disable-mic\"]"),
 			gohelp.Item(".taplongpress(tap_ms, long_ms)", "Tap fires first, tap-then-longpress fires second (2-command array)", "\"super+space.taplongpress\" = [\"quick\", \"long\"]"),
+			gohelp.Item(".tappressrelease(tap_ms)", "Tap then press fires first, release fires second (2-command array)", "\"mute.tappressrelease(200)\" = [\"start\", \"stop\"]"),
+			gohelp.Item(".tapholdrelease(tap_ms, hold_ms)", "Tap then hold fires first, release fires second (2-command array)", "\"f1.tapholdrelease\" = [\"hold-start\", \"hold-end\"]"),
 		).
 		Section("Modifiers",
 			gohelp.Item(".switch", "Cycle through array of commands on each press", "\"f2.switch\" = [\"cmd1\", \"cmd2\", \"cmd3\"]"),
 			gohelp.Item(".repeat", "Loop command: with .hold (while held) or .onpress (toggle)", "\"f9.onpress.repeat\" = \"xdotool click 1\""),
 			gohelp.Item(".passthrough", "Match regardless of modifier state", "\"v.passthrough\" = \"copyq toggle\""),
 		).
-		Text("Restrictions:\n  • .doubletap and .taphold only work on single keys (no combos)\n  • .switch, .taphold, .pressrelease, .holdrelease, and .taplongpress require command arrays")
+		Section("Restrictions",
+			gohelp.Item("Single keys only", ".doubletap and .taphold only work on single keys (no combos)"),
+			gohelp.Item("Array commands", ".switch, .pressrelease, .holdrelease, .taplongpress, .tappressrelease, and .tapholdrelease require 2+ commands"),
+		)
 
 	helpAxis = gohelp.NewPage("axis", "absolute axis and peripheral support").
 		Text("akeyshually supports absolute axis (ABS) events from evdev devices - bind any peripheral with axis input.").
@@ -103,14 +111,18 @@ var (
 		).
 		Section("Syntax",
 			gohelp.Item("Direction suffix", "Append + or - to axis name for direction", "\"rx+\" or \"abs_y-\""),
-			gohelp.Item("Commands", "Any command works, including remap scroll output", "\">scrollup\", \">scrolldown\", \">scrollleft\", \">scrollright\""),
+			gohelp.Item("Scroll output", "Remap to scroll events", "\">scrollup\", \">scrolldown\", \">scrollleft\", \">scrollright\""),
+			gohelp.Item("Shell command", "Any shell command works", "\"volume_up\", \"brightness-control +10\""),
 		).
-		Text("[shortcuts]\n\"rx+\" = \">scrollup\"      # Touchstrip up → scroll up\n\"rx-\" = \">scrolldown\"    # Touchstrip down → scroll down\n\"abs_y+\" = \"volume_up\"   # Axis movement → volume control").
+		Section("Examples",
+			gohelp.Item("Touchstrip scroll up", "Positive direction triggers scroll up", "\"rx+\" = \">scrollup\""),
+			gohelp.Item("Touchstrip scroll down", "Negative direction triggers scroll down", "\"rx-\" = \">scrolldown\""),
+			gohelp.Item("Axis volume control", "Map axis movement to shell commands", "\"abs_y+\" = \"volume_up\""),
+		).
 		Section("Device Detection",
 			gohelp.Item("Auto-detection", "Most devices auto-detected by capability flags"),
-			gohelp.Item("Explicit grab", "Add device name substring to [settings] devices array if not detected", "devices = [\"Tablet Monitor Touch Strip\"]"),
-		).
-		Text("Example: Huion Kamvas Pro 13 touchstrip scrolling\n\n[settings]\ndevices = [\"Tablet Monitor Touch Strip\"]\n\n[shortcuts]\n\"rx+\" = \">scrollup\"\n\"rx-\" = \">scrolldown\"")
+			gohelp.Item("Explicit grab", "Add device name substring to [settings] devices array", "devices = [\"Tablet Monitor Touch Strip\"]"),
+		)
 )
 
 // Help displays usage information or topic-specific help.

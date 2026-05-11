@@ -69,7 +69,7 @@ func Run(
 	// BUT: Skip early exit if the candidate is EscapePending (needs to wait for actual key events)
 	if len(candidates) == 1 && len(ladder) == 0 && candidates[0].Shortcut.Behavior != config.BehaviorEscapePending {
 		common.LogDebug(">>> LADDER %s: single candidate no timers, firing immediately", combo)
-		fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, injector, virtual, modifiers, ctx, state)
+		fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, injector, virtual, modifiers, ctx, state, pressed)
 		return
 	}
 
@@ -153,7 +153,7 @@ func Run(
 				if timer != nil {
 					timer.Stop()
 				}
-				fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, injector, virtual, modifiers, ctx, state)
+				fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, injector, virtual, modifiers, ctx, state, pressed)
 				return
 			}
 
@@ -181,7 +181,7 @@ func Run(
 				if timer != nil {
 					timer.Stop()
 				}
-				fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, injector, virtual, modifiers, ctx, state)
+				fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, injector, virtual, modifiers, ctx, state, pressed)
 				return
 			}
 
@@ -198,7 +198,7 @@ func Run(
 			// Last standing wins
 			if len(candidates) == 1 {
 				common.LogDebug(">>> LADDER %s: WINNER=%s (last standing after timer)", combo, behaviorName(candidates[0].Shortcut.Behavior))
-				fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, injector, virtual, modifiers, ctx, state)
+				fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, injector, virtual, modifiers, ctx, state, pressed)
 				return
 			}
 
@@ -259,8 +259,8 @@ func buildTimerLadder(candidates []timers.Candidate, defaultInterval float64) []
 		interval := intervalOrDefault(c.Shortcut.Interval, defaultInterval)
 
 		switch c.Shortcut.Behavior {
-		case config.BehaviorDoubleTap:
-			// Needs Phase 1 timer for doubletap window
+		case config.BehaviorDoubleTap, config.BehaviorTapPressRelease:
+			// Needs Phase 1 timer for doubletap/tap window
 			if existing, ok := thresholds[1]; !ok || ms(interval) > existing {
 				thresholds[1] = ms(interval)
 			}
@@ -271,7 +271,7 @@ func buildTimerLadder(candidates []timers.Candidate, defaultInterval float64) []
 				thresholds[1] = ms(interval)
 			}
 
-		case config.BehaviorTapHold, config.BehaviorTapLongPress:
+		case config.BehaviorTapHold, config.BehaviorTapLongPress, config.BehaviorTapHoldRelease:
 			// Needs Phase 1 timer for tap window
 			if existing, ok := thresholds[1]; !ok || ms(interval) > existing {
 				thresholds[1] = ms(interval)
@@ -332,7 +332,7 @@ func isEliminated(b config.BehaviorMode, count int, pressed bool, phase int, has
 		}
 		return false
 
-	case config.BehaviorDoubleTap:
+	case config.BehaviorDoubleTap, config.BehaviorTapPressRelease:
 		// Eliminated by window expiry with no second press
 		if phase >= 1 && count < 2 {
 			return true
@@ -343,7 +343,7 @@ func isEliminated(b config.BehaviorMode, count int, pressed bool, phase int, has
 		}
 		return false
 
-	case config.BehaviorTapHold, config.BehaviorTapLongPress:
+	case config.BehaviorTapHold, config.BehaviorTapLongPress, config.BehaviorTapHoldRelease:
 		// Eliminated by releasing after tap window expired without second press
 		if !pressed && count < 2 && phase >= 1 {
 			return true
@@ -386,6 +386,7 @@ func fireWinner(
 	modifiers matcher.ModifierState,
 	ctx context.Context,
 	state *timers.ComboState,
+	pressed bool,
 ) {
 	s := winner.Shortcut
 
@@ -418,14 +419,23 @@ func fireWinner(
 			common.LogTrigger(resolvedCmd)
 			executor.Run(resolvedCmd, execCtx)
 		}
-		// 10ms gap between press and release commands
-		time.AfterFunc(10*time.Millisecond, func() {
-			if s.Commands[1] != "" {
-				resolvedCmd := cfg.ResolveCommand(s.Commands[1])
-				common.LogTrigger(resolvedCmd)
-				executor.Run(resolvedCmd, execCtx)
+		// If key is still pressed, wait for release (seesaw behavior)
+		// If key already released, fire second command immediately (rapid succession)
+		if pressed {
+			// Seesaw: wait for actual release event
+			select {
+			case <-ctx.Done():
+			case <-state.ReleaseCh:
 			}
-		})
+		} else {
+			// Rapid succession: 10ms gap (key already released)
+			time.Sleep(10 * time.Millisecond)
+		}
+		if s.Commands[1] != "" {
+			resolvedCmd := cfg.ResolveCommand(s.Commands[1])
+			common.LogTrigger(resolvedCmd)
+			executor.Run(resolvedCmd, execCtx)
+		}
 
 	case config.BehaviorHold, config.BehaviorLongPress:
 		common.LogMatch(combo+".hold", combo)
@@ -504,6 +514,42 @@ func fireWinner(
 		resolvedCmd := cfg.ResolveCommand(s.Commands[1])
 		common.LogTrigger(resolvedCmd)
 		executor.Run(resolvedCmd, execCtx)
+
+	case config.BehaviorTapPressRelease:
+		common.LogMatch(combo+".tappressrelease", combo)
+		if s.Commands[0] != "" {
+			resolvedCmd := cfg.ResolveCommand(s.Commands[0])
+			common.LogTrigger(resolvedCmd)
+			executor.Run(resolvedCmd, execCtx)
+		}
+		// Wait for release
+		select {
+		case <-ctx.Done():
+		case <-state.ReleaseCh:
+		}
+		if s.Commands[1] != "" {
+			resolvedCmd := cfg.ResolveCommand(s.Commands[1])
+			common.LogTrigger(resolvedCmd)
+			executor.Run(resolvedCmd, execCtx)
+		}
+
+	case config.BehaviorTapHoldRelease:
+		common.LogMatch(combo+".tapholdrelease", combo)
+		if s.Commands[0] != "" {
+			resolvedCmd := cfg.ResolveCommand(s.Commands[0])
+			common.LogTrigger(resolvedCmd)
+			executor.Run(resolvedCmd, execCtx)
+		}
+		select {
+		case <-ctx.Done():
+		case <-state.ReleaseCh:
+		}
+		if s.Commands[1] != "" {
+			resolvedCmd := cfg.ResolveCommand(s.Commands[1])
+			common.LogMatch(combo+".tapholdrelease.release", combo)
+			common.LogTrigger(resolvedCmd)
+			executor.Run(resolvedCmd, execCtx)
+		}
 
 	case config.BehaviorEscapePending:
 		// No-op: this should never fire (eliminated before it can win)
@@ -588,6 +634,10 @@ func behaviorName(b config.BehaviorMode) string {
 		return "taphold"
 	case config.BehaviorTapLongPress:
 		return "taplongpress"
+	case config.BehaviorTapPressRelease:
+		return "tappressrelease"
+	case config.BehaviorTapHoldRelease:
+		return "tapholdrelease"
 	case config.BehaviorEscapePending:
 		return "escape_pending"
 	default:

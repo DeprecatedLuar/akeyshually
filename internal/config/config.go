@@ -45,6 +45,8 @@ const (
 	BehaviorHoldRelease         // Commands[0] at hold threshold (can be ""), Commands[1] on release after threshold
 	BehaviorTapHold             // tap fires Commands[0], tap-then-hold sustains Commands[1]
 	BehaviorTapLongPress        // tap fires Commands[0], tap-then-longpress fires Commands[1] once
+	BehaviorTapPressRelease     // tap, then Commands[0] on second press, Commands[1] on release
+	BehaviorTapHoldRelease      // tap, then Commands[0] at hold threshold, Commands[1] on release
 	BehaviorEscapePending       // pseudo-candidate: prevents early resolution when escape hatches exist
 )
 
@@ -430,6 +432,8 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 	intervalRegex := regexp.MustCompile(`^(hold|longpress|doubletap|holdrelease)\((\d+\.?\d*|\d*\.\d+)\)$`)
 	tapHoldRegex := regexp.MustCompile(`^tap(?:\((\d+\.?\d*|\d*\.\d+)\))?hold(?:\((\d+\.?\d*|\d*\.\d+)\))?$`)
 	tapLongPressRegex := regexp.MustCompile(`^tap(?:\((\d+\.?\d*|\d*\.\d+)\))?longpress(?:\((\d+\.?\d*|\d*\.\d+)\))?$`)
+	tapPressReleaseRegex := regexp.MustCompile(`^tap(?:\((\d+\.?\d*|\d*\.\d+)\))?pressrelease$`)
+	tapHoldReleaseRegex := regexp.MustCompile(`^tap(?:\((\d+\.?\d*|\d*\.\d+)\))?holdrelease(?:\((\d+\.?\d*|\d*\.\d+)\))?$`)
 
 	for i := 1; i < len(parts); i++ {
 		part := strings.ToLower(parts[i])
@@ -451,6 +455,30 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 		// Check for taplongpress with optional intervals: tap(N)longpress(N)
 		if matches := tapLongPressRegex.FindStringSubmatch(part); matches != nil {
 			shortcut.Behavior = BehaviorTapLongPress
+			if matches[1] != "" {
+				interval, _ := strconv.ParseFloat(matches[1], 64)
+				shortcut.Interval = normalizeInterval(interval)
+			}
+			if matches[2] != "" {
+				interval, _ := strconv.ParseFloat(matches[2], 64)
+				shortcut.HoldInterval = normalizeInterval(interval)
+			}
+			continue
+		}
+
+		// Check for tappressrelease with optional interval: tap(N)pressrelease
+		if matches := tapPressReleaseRegex.FindStringSubmatch(part); matches != nil {
+			shortcut.Behavior = BehaviorTapPressRelease
+			if matches[1] != "" {
+				interval, _ := strconv.ParseFloat(matches[1], 64)
+				shortcut.Interval = normalizeInterval(interval)
+			}
+			continue
+		}
+
+		// Check for tapholdrelease with optional intervals: tap(N)holdrelease(N)
+		if matches := tapHoldReleaseRegex.FindStringSubmatch(part); matches != nil {
+			shortcut.Behavior = BehaviorTapHoldRelease
 			if matches[1] != "" {
 				interval, _ := strconv.ParseFloat(matches[1], 64)
 				shortcut.Interval = normalizeInterval(interval)
@@ -497,6 +525,10 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 			shortcut.Behavior = BehaviorDoubleTap
 		case "pressrelease":
 			shortcut.Behavior = BehaviorPressRelease
+		case "tappressrelease":
+			shortcut.Behavior = BehaviorTapPressRelease
+		case "tapholdrelease":
+			shortcut.Behavior = BehaviorTapHoldRelease
 		case "onrelease":
 			return nil, fmt.Errorf("onrelease removed: use .pressrelease = [\"\", \"cmd\"]")
 		case "onpress":
@@ -532,6 +564,10 @@ func behaviorName(b BehaviorMode) string {
 		return "taphold"
 	case BehaviorTapLongPress:
 		return "taplongpress"
+	case BehaviorTapPressRelease:
+		return "tappressrelease"
+	case BehaviorTapHoldRelease:
+		return "tapholdrelease"
 	default:
 		return "unknown"
 	}

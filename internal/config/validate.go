@@ -255,15 +255,17 @@ func validateRemapCommand(cmd string) error {
 
 // Lookup table mapping behaviors to their validation functions
 var behaviorValidators = map[BehaviorMode]func(*ParsedShortcut) error{
-	BehaviorNormal:       validateNormal,
-	BehaviorHold:         validateHold,
-	BehaviorLongPress:    validateLongPress,
-	BehaviorSwitch:       validateSwitch,
-	BehaviorDoubleTap:    validateDoubleTap,
-	BehaviorPressRelease: validatePressRelease,
-	BehaviorHoldRelease:  validateHoldRelease,
-	BehaviorTapHold:      validateTapHold,
-	BehaviorTapLongPress: validateTapLongPress,
+	BehaviorNormal:          validateNormal,
+	BehaviorHold:            validateHold,
+	BehaviorLongPress:       validateLongPress,
+	BehaviorSwitch:          validateSwitch,
+	BehaviorDoubleTap:       validateDoubleTap,
+	BehaviorPressRelease:    validatePressRelease,
+	BehaviorHoldRelease:     validateHoldRelease,
+	BehaviorTapHold:         validateTapHold,
+	BehaviorTapLongPress:    validateTapLongPress,
+	BehaviorTapPressRelease: validateTapPressRelease,
+	BehaviorTapHoldRelease:  validateTapHoldRelease,
 }
 
 // Individual behavior validators - each validates command count and behavior-specific rules
@@ -330,6 +332,20 @@ func validateTapHold(p *ParsedShortcut) error {
 func validateTapLongPress(p *ParsedShortcut) error {
 	if len(p.Commands) != 2 {
 		return fmt.Errorf("taplongpress behavior requires exactly 2 commands")
+	}
+	return nil
+}
+
+func validateTapPressRelease(p *ParsedShortcut) error {
+	if len(p.Commands) != 2 {
+		return fmt.Errorf("tappressrelease behavior requires exactly 2 commands")
+	}
+	return nil
+}
+
+func validateTapHoldRelease(p *ParsedShortcut) error {
+	if len(p.Commands) != 2 {
+		return fmt.Errorf("tapholdrelease behavior requires exactly 2 commands")
 	}
 	return nil
 }

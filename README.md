@@ -187,6 +187,8 @@ Config lives at `~/.config/akeyshually/`:
 | `.longpress` / `.longpress(ms)` | `"key.longpress(500)"` | Fire once after threshold (one-shot) |
 | `.holdrelease` / `.holdrelease(ms)` | `"key.holdrelease(500)" = ["hold_cmd", "release_cmd"]` | Execute at hold threshold and on release |
 | `.taplongpress` / `.taplongpress(tap_ms, long_ms)` | `"key.taplongpress" = ["tap_cmd", "long_cmd"]` | Tap once, or tap-then-longpress |
+| `.tappressrelease` / `.tappressrelease(tap_ms)` | `"key.tappressrelease(200)" = ["press_cmd", "release_cmd"]` | Tap then press fires first, release fires second |
+| `.tapholdrelease` / `.tapholdrelease(tap_ms, hold_ms)` | `"key.tapholdrelease" = ["hold_cmd", "release_cmd"]` | Tap then hold fires first, release fires second |
 
 **Modifiers** — change how the command executes:
 
