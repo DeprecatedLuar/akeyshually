@@ -127,7 +127,7 @@ Press the combo, notification pops.
 
 **Now here's how to make an auto-clicker:**
 ```toml
-"f9.repeat" = "notify-send 'pLe4Se h3Lp mYy S0-uL'"
+"f9.repeat" = ">lclick"
 ```
 Tap F9 to trigger, tap again to stop.
 
