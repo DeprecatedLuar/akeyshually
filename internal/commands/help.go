@@ -40,6 +40,7 @@ var (
 			gohelp.Item("Key modifiers", "super, ctrl, alt, shift (lowercase, no left/right distinction)"),
 			gohelp.Item("Keys", "lowercase letters, numbers, special keys (print, space, etc.)"),
 			gohelp.Item("Axis inputs", "x, y, z, rx, ry, rz, abs_x, abs_y, etc. with +/- direction (see 'help axis')"),
+			gohelp.Item("Remap output", ">key, >lclick, >scrollup - inject key/mouse/scroll events (see 'help remap')"),
 			gohelp.Item("Syntax", "Use + to separate modifiers and key", "\"super+t\" = \"alacritty\""),
 			gohelp.Item("Triggers", ".onpress (default), .hold, .doubletap, .taphold, .pressrelease, .longpress, etc."),
 			gohelp.Item("Modifiers", ".switch, .repeat, .passthrough"),
@@ -47,8 +48,9 @@ var (
 		Section("Examples",
 			gohelp.Item("Tap modifier key", "Execute command on modifier release", "\"super.pressrelease\" = [\"\", \"rofi\"]"),
 			gohelp.Item("Launch terminal", "Simple key combo", "\"super+t\" = \"alacritty\""),
-			gohelp.Item("Toggle auto-clicker", "Repeat while held or toggle on press", "\"f9.onpress.repeat\" = \"xdotool click 1\""),
+			gohelp.Item("Toggle auto-clicker", "Remap key to mouse click, repeat on press", "\"f9.onpress.repeat\" = \">lclick\""),
 			gohelp.Item("Axis scrolling", "Touchstrip or peripheral axis input", "\"rx+\" = \">scrollup\""),
+			gohelp.Item("Key to mouse button", "Remap any key to mouse click", "\"f1\" = \">lclick\""),
 		).
 		Section("[command_variables]",
 			gohelp.Item("browser", "Reusable command alias", "browser = \"brave-browser --new-window\""),
@@ -123,9 +125,34 @@ var (
 			gohelp.Item("Auto-detection", "Most devices auto-detected by capability flags"),
 			gohelp.Item("Explicit grab", "Add device name substring to [settings] devices array", "devices = [\"Tablet Monitor Touch Strip\"]"),
 		)
+
+	helpRemap = gohelp.NewPage("remap", "key and mouse button injection").
+		Text("Remap syntax (> prefix) injects keyboard keys, mouse buttons, and scroll events via evdev.").
+		Section("Syntax",
+			gohelp.Item(">key", "Tap key combo (press and release)", "\">return\", \">ctrl+c\", \">super+t\""),
+			gohelp.Item(">>key", "Hold key forever (until << releases)", "\">>shift\""),
+			gohelp.Item("<key", "Release single key", "\"<shift\""),
+			gohelp.Item("<<", "Release all persistent held keys", "\"<<\""),
+		).
+		Section("Mouse Buttons",
+			gohelp.Item("Left click", "lclick, leftclick, lbutton, leftbutton, mouse1, btn_left", "\">lclick\""),
+			gohelp.Item("Right click", "rclick, rightclick, rbutton, rightbutton, mouse2, btn_right", "\">rclick\""),
+			gohelp.Item("Middle click", "mclick, middleclick, mbutton, middlebutton, mouse3, btn_middle", "\">mclick\""),
+			gohelp.Item("Forward/Back", "forward/mouse4, back/mouse5, btn_side, btn_extra", "\">forward\""),
+		).
+		Section("Scroll/Wheel",
+			gohelp.Item("Vertical", "scrollup/wheelup, scrolldown/wheeldown", "\">scrollup\""),
+			gohelp.Item("Horizontal", "scrollleft/wheelleft, scrollright/wheelright", "\">scrollleft\""),
+		).
+		Section("Examples",
+			gohelp.Item("Auto-clicker", "Toggle mouse click on/off", "\"f9.onpress.repeat\" = \">lclick\""),
+			gohelp.Item("Remap key to click", "F1 triggers left click", "\"f1\" = \">lclick\""),
+			gohelp.Item("Key to scroll", "F2/F3 scroll up/down", "\"f2\" = \">scrollup\""),
+			gohelp.Item("Sticky modifier", "Hold shift, release later", "\"f5\" = \">>shift\"\n\"f6\" = \"<<\""),
+		)
 )
 
 // Help displays usage information or topic-specific help.
 func Help(args ...string) {
-	gohelp.Run(append([]string{"help"}, args...), helpRoot, helpConfig, helpOverlays, helpModifiers, helpAxis)
+	gohelp.Run(append([]string{"help"}, args...), helpRoot, helpConfig, helpOverlays, helpModifiers, helpAxis, helpRemap)
 }

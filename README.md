@@ -316,6 +316,15 @@ devices = ["Huion Tablet", "Xbox Controller"]
 
 **Tablet/generic:** `btn_0`-`btn_9`, `btn_tool_pen`, `btn_touch`, `btn_stylus`, `btn_stylus2`
 
+**Mouse buttons** (remap output):
+- Left: `btn_left`, `lclick`, `leftclick`, `lbutton`, `leftbutton`, `mouse1`
+- Right: `btn_right`, `rclick`, `rightclick`, `rbutton`, `rightbutton`, `mouse2`
+- Middle: `btn_middle`, `mclick`, `middleclick`, `mbutton`, `middlebutton`, `mouse3`
+- Forward: `btn_forward`, `forward`, `mouse4`
+- Back: `btn_back`, `back`, `mouse5`
+- Extra: `btn_side`, `btn_extra`
+- Use with remap prefix: `">lclick"`, `">rclick"`, `">middleclick"`, etc.
+
 **Axis (absolute):** `x`, `y`, `z`, `rx`, `ry`, `rz`, `abs_x`, `abs_y`, `abs_z`, `abs_rx`, `abs_ry`, `abs_rz`
 - Use with direction suffix: `"rx+"`, `"abs_y-"`
 - Remap to scroll: `">scrollup"`, `">scrolldown"`, `">scrollleft"`, `">scrollright"` (or `">wheelup"`, `">wheeldown"`, `">wheelleft"`, `">wheelright"`)
