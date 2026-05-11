@@ -482,6 +482,9 @@ func CreateKeyInjector() (*evdev.InputDevice, error) {
 	for i := range codes {
 		codes[i] = evdev.EvCode(i + 1)
 	}
+	// Add mouse button codes (BTN_LEFT through BTN_EXTRA: 0x110-0x116)
+	codes = append(codes, evdev.BTN_LEFT, evdev.BTN_RIGHT, evdev.BTN_MIDDLE,
+		evdev.BTN_SIDE, evdev.BTN_EXTRA, evdev.BTN_FORWARD, evdev.BTN_BACK)
 	return evdev.CreateDevice(injectorDeviceName, evdev.InputID{BusType: injectorBusType, Vendor: injectorVendorID, Product: injectorProductID, Version: injectorVersion},
 		map[evdev.EvType][]evdev.EvCode{
 			evdev.EV_KEY: codes,

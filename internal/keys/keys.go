@@ -87,6 +87,14 @@ var KeyCodeMap = map[string]uint16{
 	// Tablet pen buttons
 	"btn_tool_pen": evdev.BTN_TOOL_PEN, "btn_touch": evdev.BTN_TOUCH,
 	"btn_stylus": evdev.BTN_STYLUS, "btn_stylus2": evdev.BTN_STYLUS2,
+	// Mouse buttons
+	"btn_left": evdev.BTN_LEFT, "lclick": evdev.BTN_LEFT, "leftclick": evdev.BTN_LEFT, "lbutton": evdev.BTN_LEFT, "leftbutton": evdev.BTN_LEFT, "mouse1": evdev.BTN_LEFT,
+	"btn_right": evdev.BTN_RIGHT, "rclick": evdev.BTN_RIGHT, "rightclick": evdev.BTN_RIGHT, "rbutton": evdev.BTN_RIGHT, "rightbutton": evdev.BTN_RIGHT, "mouse2": evdev.BTN_RIGHT,
+	"btn_middle": evdev.BTN_MIDDLE, "mclick": evdev.BTN_MIDDLE, "middleclick": evdev.BTN_MIDDLE, "mbutton": evdev.BTN_MIDDLE, "middlebutton": evdev.BTN_MIDDLE, "mouse3": evdev.BTN_MIDDLE,
+	"btn_forward": evdev.BTN_FORWARD, "forward": evdev.BTN_FORWARD, "mouse4": evdev.BTN_FORWARD,
+	"btn_back": evdev.BTN_BACK, "back": evdev.BTN_BACK, "mouse5": evdev.BTN_BACK,
+	"btn_side": evdev.BTN_SIDE,
+	"btn_extra": evdev.BTN_EXTRA,
 	// Output aliases for scroll/wheel (map to REL codes for remap output)
 	"scrollup": evdev.REL_WHEEL, "scrolldown": evdev.REL_WHEEL,
 	"scrollleft": evdev.REL_HWHEEL, "scrollright": evdev.REL_HWHEEL,
@@ -161,6 +169,10 @@ func init() {
 		evdev.BTN_THUMBL: "btn_thumbl", evdev.BTN_THUMBR: "btn_thumbr",
 		evdev.BTN_TOOL_PEN: "btn_tool_pen", evdev.BTN_TOUCH: "btn_touch",
 		evdev.BTN_STYLUS: "btn_stylus", evdev.BTN_STYLUS2: "btn_stylus2",
+		// Mouse buttons canonical names
+		evdev.BTN_LEFT: "btn_left", evdev.BTN_RIGHT: "btn_right", evdev.BTN_MIDDLE: "btn_middle",
+		evdev.BTN_FORWARD: "btn_forward", evdev.BTN_BACK: "btn_back",
+		evdev.BTN_SIDE: "btn_side", evdev.BTN_EXTRA: "btn_extra",
 	}
 	for code, name := range canonicalOverrides {
 		CodeToNameMap[code] = name
