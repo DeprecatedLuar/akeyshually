@@ -3,6 +3,7 @@ package listener
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -31,17 +32,28 @@ type KeyboardPair struct {
 	Virtual  *evdev.InputDevice
 }
 
+type FailedGrab struct {
+	Name   string
+	Reason string
+}
+
+type DeviceResult struct {
+	Pairs    []KeyboardPair
+	Failures []FailedGrab
+}
+
 type KeyHandler func(code uint16, value int32) bool
 
-func FindKeyboards() ([]KeyboardPair, error) {
+func FindKeyboards() (DeviceResult, error) {
 	paths, err := evdev.ListDevicePaths()
 	if err != nil {
-		return nil, fmt.Errorf("failed to list input devices: %w", err)
+		return DeviceResult{}, fmt.Errorf("failed to list input devices: %w", err)
 	}
 
 	var remappers []*evdev.InputDevice
 	var keyboards []*evdev.InputDevice
 	var buttonDevices []*evdev.InputDevice
+	devicePaths := make(map[*evdev.InputDevice]string)
 
 	common.LogDebug("Scanning %d input devices...", len(paths))
 
@@ -65,6 +77,7 @@ func FindKeyboards() ([]KeyboardPair, error) {
 			hasAlpha := hasAlphabetKeys(dev)
 			common.LogDebug("Found remapper: %s (hasKey=%v, hasAlpha=%v)", name, hasKey, hasAlpha)
 			if hasKey && hasAlpha {
+				devicePaths[dev] = path.Path
 				remappers = append(remappers, dev)
 				continue
 			}
@@ -73,6 +86,7 @@ func FindKeyboards() ([]KeyboardPair, error) {
 		// Button devices (phone hardware buttons, media keys)
 		if isButtonDevice(dev) {
 			common.LogDebug("Found button device: %s", name)
+			devicePaths[dev] = path.Path
 			buttonDevices = append(buttonDevices, dev)
 			continue
 		}
@@ -80,6 +94,7 @@ func FindKeyboards() ([]KeyboardPair, error) {
 		// Physical keyboards need EV_REP
 		if isKeyboard(dev) {
 			common.LogDebug("Found physical keyboard: %s", name)
+			devicePaths[dev] = path.Path
 			keyboards = append(keyboards, dev)
 			continue
 		}
@@ -97,19 +112,28 @@ func FindKeyboards() ([]KeyboardPair, error) {
 		devicesToGrab = append(remappers, buttonDevices...)
 	} else {
 		if len(keyboards) == 0 && len(buttonDevices) == 0 {
-			return nil, fmt.Errorf("no keyboards detected")
+			return DeviceResult{}, fmt.Errorf("no keyboards detected")
 		}
 		devicesToGrab = append(keyboards, buttonDevices...)
 	}
 
 	// Grab and clone each keyboard
 	var pairs []KeyboardPair
+	var failures []FailedGrab
 	for _, physical := range devicesToGrab {
 		name, _ := physical.Name()
 
 		// Grab for exclusive access
 		if err := physical.Grab(); err != nil {
-			fmt.Fprintf(os.Stderr, "[WARN] Failed to grab %s: %v\n", name, err)
+			devicePath := devicePaths[physical]
+			holders := findProcessesUsingDevice(devicePath)
+			var reason string
+			if holders != "" {
+				reason = "held by " + holders
+			} else {
+				reason = err.Error()
+			}
+			failures = append(failures, FailedGrab{Name: name, Reason: reason})
 			physical.Close()
 			continue
 		}
@@ -117,7 +141,7 @@ func FindKeyboards() ([]KeyboardPair, error) {
 		// Clone to create virtual keyboard
 		virtual, err := evdev.CloneDevice(name+virtualDeviceSuffix, physical)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[WARN] Failed to clone %s: %v\n", name, err)
+			failures = append(failures, FailedGrab{Name: name, Reason: err.Error()})
 			physical.Ungrab()
 			physical.Close()
 			continue
@@ -130,10 +154,10 @@ func FindKeyboards() ([]KeyboardPair, error) {
 	}
 
 	if len(pairs) == 0 {
-		return nil, fmt.Errorf("no keyboards could be grabbed and cloned")
+		return DeviceResult{}, fmt.Errorf("no keyboards could be grabbed and cloned")
 	}
 
-	return pairs, nil
+	return DeviceResult{Pairs: pairs, Failures: failures}, nil
 }
 
 func isKeyboard(dev *evdev.InputDevice) bool {
@@ -266,14 +290,83 @@ func Cleanup(pair KeyboardPair) {
 	pair.Physical.Close()
 }
 
+// findProcessesUsingDevice scans /proc/*/fd/ to find all processes that have the device open.
+// Returns a formatted string like "process1 (PID), process2 (PID)" or empty string if none found.
+// Best-effort only - silently ignores errors.
+func findProcessesUsingDevice(devicePath string) string {
+	// Get absolute path for more reliable comparison
+	absPath, err := filepath.Abs(devicePath)
+	if err != nil {
+		absPath = devicePath
+	}
+
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return ""
+	}
+
+	var processes []string
+	ourPID := fmt.Sprintf("%d", os.Getpid())
+
+	for _, entry := range entries {
+		// Only check numeric directories (PIDs)
+		name := entry.Name()
+		if len(name) == 0 || name[0] < '0' || name[0] > '9' {
+			continue
+		}
+
+		// Skip our own process
+		if name == ourPID {
+			continue
+		}
+
+		fdDir := filepath.Join("/proc", name, "fd")
+		fds, err := os.ReadDir(fdDir)
+		if err != nil {
+			// Permission denied or process exited - skip silently
+			continue
+		}
+
+		for _, fdEntry := range fds {
+			fdPath := filepath.Join(fdDir, fdEntry.Name())
+			target, err := os.Readlink(fdPath)
+			if err != nil {
+				continue
+			}
+
+			// Match either original path or absolute path
+			if target == devicePath || target == absPath {
+				// Found it - try to get process name
+				commPath := filepath.Join("/proc", name, "comm")
+				commBytes, err := os.ReadFile(commPath)
+				if err != nil {
+					// Process exited but we have PID
+					processes = append(processes, "PID "+name)
+				} else {
+					processName := strings.TrimSpace(string(commBytes))
+					processes = append(processes, processName+" ("+name+")")
+				}
+				break // Found in this process, move to next PID
+			}
+		}
+	}
+
+	if len(processes) == 0 {
+		return ""
+	}
+
+	return strings.Join(processes, ", ")
+}
+
 // FindDeclaredDevices finds and grabs devices whose names contain any of the given substrings.
-func FindDeclaredDevices(matches []string) ([]KeyboardPair, error) {
+func FindDeclaredDevices(matches []string) (DeviceResult, error) {
 	paths, err := evdev.ListDevicePaths()
 	if err != nil {
-		return nil, fmt.Errorf("failed to list input devices: %w", err)
+		return DeviceResult{}, fmt.Errorf("failed to list input devices: %w", err)
 	}
 
 	var pairs []KeyboardPair
+	var failures []FailedGrab
 
 	for _, path := range paths {
 		dev, err := evdev.Open(path.Path)
@@ -307,14 +400,21 @@ func FindDeclaredDevices(matches []string) ([]KeyboardPair, error) {
 		common.LogDebug("Found declared device: %s", name)
 
 		if err := dev.Grab(); err != nil {
-			fmt.Fprintf(os.Stderr, "[WARN] Failed to grab %s: %v\n", name, err)
+			holders := findProcessesUsingDevice(path.Path)
+			var reason string
+			if holders != "" {
+				reason = "held by " + holders
+			} else {
+				reason = err.Error()
+			}
+			failures = append(failures, FailedGrab{Name: name, Reason: reason})
 			dev.Close()
 			continue
 		}
 
 		virtual, err := evdev.CloneDevice(name+virtualDeviceSuffix, dev)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[WARN] Failed to clone %s: %v\n", name, err)
+			failures = append(failures, FailedGrab{Name: name, Reason: err.Error()})
 			dev.Ungrab()
 			dev.Close()
 			continue
@@ -323,12 +423,12 @@ func FindDeclaredDevices(matches []string) ([]KeyboardPair, error) {
 		pairs = append(pairs, KeyboardPair{Physical: dev, Virtual: virtual})
 	}
 
-	return pairs, nil
+	return DeviceResult{Pairs: pairs, Failures: failures}, nil
 }
 
 // ListenWithReconnect wraps Listen with automatic reconnection on device disconnect.
 // On ENODEV it calls findFn every 2 seconds (up to 30 attempts) to find the device by name.
-func ListenWithReconnect(pair KeyboardPair, handler KeyHandler, findFn func() ([]KeyboardPair, error), deviceName string) error {
+func ListenWithReconnect(pair KeyboardPair, handler KeyHandler, findFn func() (DeviceResult, error), deviceName string) error {
 	for {
 		err := Listen(pair, handler)
 		if err == nil {
@@ -347,13 +447,13 @@ func ListenWithReconnect(pair KeyboardPair, handler KeyHandler, findFn func() ([
 		for attempt := 1; attempt <= reconnectMaxAttempts; attempt++ {
 			time.Sleep(reconnectInterval)
 
-			pairs, err := findFn()
+			result, err := findFn()
 			if err != nil {
 				common.LogDebug("Reconnect attempt %d/%d: %v", attempt, reconnectMaxAttempts, err)
 				continue
 			}
 
-			for _, p := range pairs {
+			for _, p := range result.Pairs {
 				name, _ := p.Physical.Name()
 				if name == deviceName && newPair == nil {
 					found := p

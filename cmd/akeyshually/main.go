@@ -167,32 +167,43 @@ func run(configPath string) {
 		}
 	}
 
-	keyboardPairs, err := listener.FindKeyboards()
+	result, err := listener.FindKeyboards()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Keyboard detection error: %v\n", err)
 		common.NotifyError("akeyshually startup failed", fmt.Sprintf("Keyboard detection error: %v", err))
 		os.Exit(1)
 	}
 
-	if len(keyboardPairs) == 0 {
+	if len(result.Pairs) == 0 {
 		fmt.Fprintf(os.Stderr, "No keyboards detected\n")
 		common.NotifyError("akeyshually startup failed", "No keyboards detected")
 		os.Exit(1)
 	}
 
-	var declaredPairs []listener.KeyboardPair
+	var declaredResult listener.DeviceResult
 	if len(cfg.Settings.Devices) > 0 {
-		declaredPairs, err = listener.FindDeclaredDevices(cfg.Settings.Devices)
+		declaredResult, err = listener.FindDeclaredDevices(cfg.Settings.Devices)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: declared device error: %v\n", err)
 		}
 	}
 
-	allPairs := append(keyboardPairs, declaredPairs...)
-	fmt.Printf("akeyshually started with %d keyboard(s):\n", len(allPairs))
+	allPairs := append(result.Pairs, declaredResult.Pairs...)
+	allFailures := append(result.Failures, declaredResult.Failures...)
+
+	// ANSI color codes
+	green := "\033[32m"
+	purple := "\033[35m"
+	dim := "\033[2m"
+	reset := "\033[0m"
+
+	fmt.Printf("Devices:\n")
 	for _, pair := range allPairs {
 		name, _ := pair.Physical.Name()
-		fmt.Printf("  - %s\n", name)
+		fmt.Printf("  %s+ %s%s\n", green, name, reset)
+	}
+	for _, fail := range allFailures {
+		fmt.Printf("  %s- %s%s %s(%s)%s\n", purple, fail.Name, reset, dim, fail.Reason, reset)
 	}
 
 	m := matcher.New(cfg.ParsedShortcuts)
@@ -228,7 +239,7 @@ func run(configPath string) {
 	registry := timers.NewStateMapRegistry()
 
 	// Launch keyboard listeners with unified handler and reconnect support
-	for _, pair := range keyboardPairs {
+	for _, pair := range result.Pairs {
 		wg.Add(1)
 		name, _ := pair.Physical.Name()
 		go func(p listener.KeyboardPair, devName string) {
@@ -282,7 +293,7 @@ func run(configPath string) {
 
 	// Launch declared device listeners
 	declaredDeviceNames := cfg.Settings.Devices
-	for _, pair := range declaredPairs {
+	for _, pair := range declaredResult.Pairs {
 		wg.Add(1)
 		name, _ := pair.Physical.Name()
 		go func(p listener.KeyboardPair, devName string) {
@@ -328,7 +339,7 @@ func run(configPath string) {
 				}
 				return false
 			}
-			if err := listener.ListenWithReconnect(p, handler, func() ([]listener.KeyboardPair, error) {
+			if err := listener.ListenWithReconnect(p, handler, func() (listener.DeviceResult, error) {
 				return listener.FindDeclaredDevices(declaredDeviceNames)
 			}, devName); err != nil {
 				fmt.Fprintf(os.Stderr, "Listener error: %v\n", err)
