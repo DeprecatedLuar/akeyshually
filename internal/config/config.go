@@ -72,9 +72,10 @@ type ParsedShortcut struct {
 }
 
 type Config struct {
-	Settings  Settings               `toml:"settings"`
-	Shortcuts map[string]interface{} `toml:"shortcuts"`         // Can be string or []interface{}
-	Commands  map[string]string      `toml:"command_variables"` // Command aliases
+	Settings    Settings               `toml:"settings"`
+	VirtualKeys map[string]interface{} `toml:"virtual_keys"`      // Virtual key definitions
+	Shortcuts   map[string]interface{} `toml:"shortcuts"`         // Can be string or []interface{}
+	Commands    map[string]string      `toml:"command_variables"` // Command aliases
 
 	// Parsed shortcuts grouped by key combo
 	ParsedShortcuts map[string][]*ParsedShortcut
@@ -119,6 +120,124 @@ func LoadFromPath(path string) (*Config, error) {
 	}
 
 	return loadFromFile(path)
+}
+
+// expandVirtualKeys expands virtual key references in shortcuts to their physical key equivalents.
+// Virtual keys are file-scoped and only expand within the same config file.
+func expandVirtualKeys(cfg *Config) error {
+	if len(cfg.VirtualKeys) == 0 {
+		return nil
+	}
+
+	// Parse virtual keys into map: virtualName -> []physicalKeys
+	virtualKeyMap := make(map[string][]string)
+	for virtualName, value := range cfg.VirtualKeys {
+		virtualName = strings.ToLower(strings.TrimSpace(virtualName))
+
+		switch v := value.(type) {
+		case string:
+			virtualKeyMap[virtualName] = []string{strings.ToLower(strings.TrimSpace(v))}
+		case []interface{}:
+			keys := make([]string, len(v))
+			for i, k := range v {
+				if s, ok := k.(string); ok {
+					keys[i] = strings.ToLower(strings.TrimSpace(s))
+				} else {
+					return fmt.Errorf("virtual key %q: array must contain strings", virtualName)
+				}
+			}
+			virtualKeyMap[virtualName] = keys
+		default:
+			return fmt.Errorf("virtual key %q: value must be string or array of strings", virtualName)
+		}
+	}
+
+	// Expand shortcuts that reference virtual keys
+	expandedShortcuts := make(map[string]interface{})
+	for key, value := range cfg.Shortcuts {
+		expanded := expandShortcutKey(key, virtualKeyMap)
+		if len(expanded) == 0 {
+			// No expansion needed, keep original
+			expandedShortcuts[key] = value
+		} else {
+			// Expand to multiple shortcuts
+			for _, expandedKey := range expanded {
+				expandedShortcuts[expandedKey] = value
+			}
+		}
+	}
+
+	cfg.Shortcuts = expandedShortcuts
+	return nil
+}
+
+// expandShortcutKey expands a single shortcut key if it references any virtual keys.
+// Returns nil if no expansion needed, or slice of expanded keys.
+func expandShortcutKey(key string, virtualKeyMap map[string][]string) []string {
+	// Split off behavior suffix (e.g., "super+action.hold" -> "super+action", ".hold")
+	parts := strings.Split(key, ".")
+	combo := parts[0]
+	suffix := ""
+	if len(parts) > 1 {
+		suffix = "." + strings.Join(parts[1:], ".")
+	}
+
+	// Handle aliases: "f1/f2/action" -> each alias may need expansion
+	aliases := strings.Split(combo, "/")
+	var expandedAliases []string
+	hasExpansion := false
+
+	for _, alias := range aliases {
+		alias = strings.TrimSpace(alias)
+		expanded := expandCombo(alias, virtualKeyMap)
+		if len(expanded) > 1 || (len(expanded) == 1 && expanded[0] != alias) {
+			hasExpansion = true
+		}
+		expandedAliases = append(expandedAliases, expanded...)
+	}
+
+	if !hasExpansion {
+		return nil // No expansion needed
+	}
+
+	// Rebuild keys with suffix
+	var result []string
+	for _, exp := range expandedAliases {
+		result = append(result, exp+suffix)
+	}
+	return result
+}
+
+// expandCombo expands a single combo (e.g., "super+action") if it contains a virtual key.
+func expandCombo(combo string, virtualKeyMap map[string][]string) []string {
+	combo = strings.ToLower(strings.TrimSpace(combo))
+
+	// Check if entire combo is a virtual key (simple case: "action")
+	if physicalKeys, ok := virtualKeyMap[combo]; ok {
+		return physicalKeys
+	}
+
+	// Split by + to get modifiers and main key
+	parts := strings.Split(combo, "+")
+	if len(parts) == 1 {
+		// Single key, not a virtual key
+		return []string{combo}
+	}
+
+	// Check if last part (main key) is a virtual key
+	mainKey := strings.TrimSpace(parts[len(parts)-1])
+	if physicalKeys, ok := virtualKeyMap[mainKey]; ok {
+		// Expand: reconstruct combo with each physical key
+		prefix := strings.Join(parts[:len(parts)-1], "+") + "+"
+		var result []string
+		for _, physicalKey := range physicalKeys {
+			result = append(result, prefix+physicalKey)
+		}
+		return result
+	}
+
+	// No expansion needed
+	return []string{combo}
 }
 
 // parseShortcutsInto parses a raw shortcut key (possibly with / aliases) into the map.
@@ -175,6 +294,11 @@ func loadFromFile(configPath string) (*Config, error) {
 	meta, err := toml.DecodeFile(configPath, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
+	}
+
+	// Expand virtual keys (file-scoped, happens before validation)
+	if err := expandVirtualKeys(cfg); err != nil {
+		return nil, fmt.Errorf("failed to expand virtual keys: %w", err)
 	}
 
 	// Validate config before processing
@@ -282,6 +406,11 @@ func loadOverlay(filename string) (*Config, error) {
 	meta, err := toml.DecodeFile(overlayPath, cfg)
 	if err != nil {
 		return nil, err
+	}
+
+	// Expand virtual keys (file-scoped, happens before validation)
+	if err := expandVirtualKeys(cfg); err != nil {
+		return nil, fmt.Errorf("failed to expand virtual keys: %w", err)
 	}
 
 	// Validate overlay before returning

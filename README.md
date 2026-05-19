@@ -160,6 +160,22 @@ Config lives at `~/.config/akeyshually/`:
 - Share command across multiple keys: `"f1/f2/f3.switch" = ["cmd1", "cmd2"]`
 - Dot modifiers from the last key apply to all: `"a/b.hold"` = `"a.hold"` + `"b.hold"`
 
+**Virtual keys:**
+- Unify multiple physical keys into a single virtual key name
+- Useful for hardware that alternates between sending different key codes (e.g., Bluetooth headphones)
+- File-scoped: virtual keys only expand within the config/overlay where they're defined
+- Syntax: `virtualname = ["key1", "key2"]` or `virtualname = "singlekey"`
+
+```toml
+[virtual_keys]
+media = ["playcd", "pausecd"]  # Unify alternating media keys
+
+[shortcuts]
+"media" = "playerctl play-pause"       # Expands to: playcd + pausecd
+"media.hold" = "playerctl next"        # Expands to: playcd.hold + pausecd.hold
+"super+media" = "custom-cmd"           # Works with modifiers too
+```
+
 **Axis syntax:**
 - Axis direction: `"rx+"`, `"abs_y-"` (axis name + direction suffix)
 - Remap to scroll: `"rx+" = ">scrollup"`, `"abs_y-" = ">scrolldown"`
