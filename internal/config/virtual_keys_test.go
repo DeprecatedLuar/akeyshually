@@ -21,10 +21,8 @@ func TestExpandVirtualKeys(t *testing.T) {
 				"action.hold": "cmd2",
 			},
 			expected: map[string]interface{}{
-				"playcd":      "cmd1",
-				"pausecd":     "cmd1",
-				"playcd.hold": "cmd2",
-				"pausecd.hold": "cmd2",
+				"playcd/pausecd":      "cmd1",
+				"playcd/pausecd.hold": "cmd2",
 			},
 		},
 		{
@@ -37,10 +35,8 @@ func TestExpandVirtualKeys(t *testing.T) {
 				"super+action.hold": "cmd2",
 			},
 			expected: map[string]interface{}{
-				"super+playcd":      "cmd1",
-				"super+pausecd":     "cmd1",
-				"super+playcd.hold": "cmd2",
-				"super+pausecd.hold": "cmd2",
+				"super+playcd/super+pausecd":      "cmd1",
+				"super+playcd/super+pausecd.hold": "cmd2",
 			},
 		},
 		{
@@ -75,9 +71,8 @@ func TestExpandVirtualKeys(t *testing.T) {
 				"super+k": "cmd2",
 			},
 			expected: map[string]interface{}{
-				"playcd":  "cmd1",
-				"pausecd": "cmd1",
-				"super+k": "cmd2",
+				"playcd/pausecd": "cmd1",
+				"super+k":        "cmd2",
 			},
 		},
 		{
@@ -89,9 +84,7 @@ func TestExpandVirtualKeys(t *testing.T) {
 				"action/f1.hold": "cmd1",
 			},
 			expected: map[string]interface{}{
-				"playcd.hold": "cmd1",
-				"pausecd.hold": "cmd1",
-				"f1.hold":     "cmd1",
+				"playcd/pausecd/f1.hold": "cmd1",
 			},
 		},
 	}

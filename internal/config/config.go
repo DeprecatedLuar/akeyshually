@@ -200,12 +200,10 @@ func expandShortcutKey(key string, virtualKeyMap map[string][]string) []string {
 		return nil // No expansion needed
 	}
 
-	// Rebuild keys with suffix
-	var result []string
-	for _, exp := range expandedAliases {
-		result = append(result, exp+suffix)
-	}
-	return result
+	// Join all expanded aliases with "/" to create shared alias group
+	// This ensures behaviors like .switch share state across all physical keys
+	joinedCombo := strings.Join(expandedAliases, "/")
+	return []string{joinedCombo + suffix}
 }
 
 // expandCombo expands a single combo (e.g., "super+action") if it contains a virtual key.
