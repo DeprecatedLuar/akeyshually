@@ -1,14 +1,15 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
-	"os/signal"
 	"sync"
-	"syscall"
 
 	evdev "github.com/holoplot/go-evdev"
+
+	daemon "github.com/deprecatedluar/luar-daemonator"
 
 	"github.com/deprecatedluar/akeyshually/internal/commands"
 	"github.com/deprecatedluar/akeyshually/internal/common"
@@ -47,9 +48,17 @@ func main() {
 		}
 	}
 
-	// No command given - run the keyboard listener
+	// No command given - run the keyboard listener in the foreground.
+	// The service manager (systemd, systemd-run) or the user backgrounds
+	// this; Run only owns single-instance enforcement and signal handling.
 	if len(remaining) == 0 {
-		run(configPath)
+		d := daemon.New(common.AppName)
+		if err := d.Run(func(ctx context.Context) error {
+			return run(ctx, configPath)
+		}); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 
@@ -57,9 +66,6 @@ func main() {
 	command := remaining[0]
 
 	switch command {
-	case "start":
-		commands.Start()
-		os.Exit(0)
 	case "stop":
 		commands.Stop()
 		os.Exit(0)
@@ -132,7 +138,7 @@ func handleConfigError(err error) {
 	os.Exit(1)
 }
 
-func run(configPath string) {
+func run(ctx context.Context, configPath string) error {
 
 	// Only ensure default config exists if not using custom config
 	if configPath == "" {
@@ -228,10 +234,6 @@ func run(configPath string) {
 
 	// Create shared loop state
 	loopState := executor.NewLoopState()
-
-	// Signal handling for cleanup
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	var wg sync.WaitGroup
 
@@ -363,15 +365,25 @@ func run(configPath string) {
 		}
 	}
 
-	// Wait for signal in separate goroutine
+	// Listener goroutines block on device reads and only return on their
+	// own (e.g. every device disconnected); ctx.Done() is what actually
+	// signals a normal shutdown (SIGTERM/SIGINT). Either way, returning
+	// here lets the deferred injector cleanup above run - unlike os.Exit,
+	// which would skip it.
+	listenersDone := make(chan struct{})
 	go func() {
-		<-sigChan
+		wg.Wait()
+		close(listenersDone)
+	}()
+
+	select {
+	case <-ctx.Done():
 		fmt.Fprintf(os.Stderr, "\nShutting down...\n")
 		for _, pair := range allPairs {
 			listener.Cleanup(pair)
 		}
-		os.Exit(0)
-	}()
+	case <-listenersDone:
+	}
 
-	wg.Wait()
+	return nil
 }

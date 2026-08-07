@@ -8,9 +8,9 @@ var (
 	helpRoot = gohelp.NewPage("akeyshually", "keyboard shortcut daemon").
 		Usage("akeyshually [command] [flags]").
 		Section("Commands",
-			gohelp.Item("start", "Start daemon in background"),
+			gohelp.Item("(no command)", "Run the daemon in the foreground"),
 			gohelp.Item("stop", "Stop running daemon"),
-			gohelp.Item("restart", "Restart daemon"),
+			gohelp.Item("restart", "Restart daemon (requires the systemd unit)"),
 			gohelp.Item("update", "Check for and install updates"),
 			gohelp.Item("config [file]", "Edit config file in $EDITOR"),
 			gohelp.Item("enable <file>", "Enable config overlay"),

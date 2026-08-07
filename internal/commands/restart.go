@@ -6,12 +6,13 @@ import (
 	"os/exec"
 
 	daemon "github.com/deprecatedluar/luar-daemonator"
+
 	"github.com/deprecatedluar/akeyshually/internal/common"
 	"github.com/deprecatedluar/akeyshually/internal/config"
 )
 
 func restartIfRunning() {
-	d := daemon.New("akeyshually")
+	d := daemon.New(common.AppName)
 	if d.IsRunning() {
 		Restart()
 	}
@@ -19,29 +20,28 @@ func restartIfRunning() {
 
 func notifyOverlayChange(message string) {
 	if cfg, err := config.Load(); err == nil && cfg.Settings.NotifyOnOverlayChange {
-		common.NotifyInfo("akeyshually", message)
+		common.NotifyInfo(common.AppName, message)
 	}
 }
 
-// Restart implements the restart command
-// Stops the daemon and then starts it again (silent operation)
+// Restart restarts the daemon via the systemd unit. There is no manual
+// restart path: the daemon has no "start itself in the background" mode
+// to return to, only foreground - a manually-run instance has to be
+// stopped and re-run by whoever started it.
 func Restart() {
-	// Check if daemon is running via systemd
 	hasService, err := common.HasSystemdService()
-	if err == nil && hasService {
-		// Let systemd handle the restart
-		cmd := exec.Command("systemctl", "--user", "restart", "akeyshually")
-		if err := cmd.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "Failed to restart systemd service: %v\n", err)
-			os.Exit(1)
-		}
-		return
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to check systemd service: %v\n", err)
+		os.Exit(1)
+	}
+	if !hasService {
+		fmt.Fprintf(os.Stderr, "akeyshually isn't running under systemd - stop it (Ctrl-C or 'akeyshually stop') and run it again for changes to take effect\n")
+		os.Exit(1)
 	}
 
-	// Manual mode: stop then start
-	d := daemon.New("akeyshually")
-	if err := d.Restart(); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to restart daemon: %v\n", err)
+	cmd := exec.Command("systemctl", "--user", "restart", common.AppName)
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to restart systemd service: %v\n", err)
 		os.Exit(1)
 	}
 }
