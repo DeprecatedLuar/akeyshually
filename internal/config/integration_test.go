@@ -35,12 +35,10 @@ media = "playpause"
 
 	// Verify expanded shortcuts
 	expectedShortcuts := map[string]bool{
-		"playcd":        true,
-		"pausecd":       true,
-		"playcd.hold":   true,
-		"pausecd.hold":  true,
-		"super+playpause": true,
-		"super+k":       true,
+		"playcd/pausecd":      true,
+		"playcd/pausecd.hold": true,
+		"super+playpause":     true,
+		"super+k":             true,
 	}
 
 	for key := range expectedShortcuts {

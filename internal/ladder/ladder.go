@@ -27,7 +27,7 @@ func Run(
 	candidates []timers.Candidate,
 	cfg *config.Config,
 	loopState *executor.LoopState,
-	injector *evdev.InputDevice,
+	outputs executor.Outputs,
 	virtual *evdev.InputDevice,
 	modifiers matcher.ModifierState,
 	stateMap *timers.StateMap,
@@ -69,7 +69,7 @@ func Run(
 	// BUT: Skip early exit if the candidate is EscapePending (needs to wait for actual key events)
 	if len(candidates) == 1 && len(ladder) == 0 && candidates[0].Shortcut.Behavior != config.BehaviorEscapePending {
 		common.LogDebug(">>> LADDER %s: single candidate no timers, firing immediately", combo)
-		fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, injector, virtual, modifiers, ctx, state, pressed)
+		fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, outputs, virtual, modifiers, ctx, state, pressed)
 		return
 	}
 
@@ -125,7 +125,7 @@ func Run(
 			stateMap.Set(newCombo, newState)
 			common.LogDebug(">>> ESCAPE: stateMap.Set(%s) done, goroutine launching", newCombo)
 			go Run(newCtx, newState, newCombo, newKey, value, newCandidates, cfg,
-				loopState, injector, virtual, modifiers, stateMap, emittedTracker, shortcuts)
+				loopState, outputs, virtual, modifiers, stateMap, emittedTracker, shortcuts)
 			return
 
 		case <-state.PressCh:
@@ -153,7 +153,7 @@ func Run(
 				if timer != nil {
 					timer.Stop()
 				}
-				fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, injector, virtual, modifiers, ctx, state, pressed)
+				fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, outputs, virtual, modifiers, ctx, state, pressed)
 				return
 			}
 
@@ -181,7 +181,7 @@ func Run(
 				if timer != nil {
 					timer.Stop()
 				}
-				fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, injector, virtual, modifiers, ctx, state, pressed)
+				fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, outputs, virtual, modifiers, ctx, state, pressed)
 				return
 			}
 
@@ -198,7 +198,7 @@ func Run(
 			// Last standing wins
 			if len(candidates) == 1 {
 				common.LogDebug(">>> LADDER %s: WINNER=%s (last standing after timer)", combo, behaviorName(candidates[0].Shortcut.Behavior))
-				fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, injector, virtual, modifiers, ctx, state, pressed)
+				fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, outputs, virtual, modifiers, ctx, state, pressed)
 				return
 			}
 
@@ -282,8 +282,8 @@ func buildTimerLadder(candidates []timers.Candidate, defaultInterval float64) []
 				thresholds[2] = ms(holdInterval)
 			}
 
-		// BehaviorNormal and BehaviorPressRelease don't require timers themselves,
-		// but they participate in elimination when other behaviors set timers
+			// BehaviorNormal and BehaviorPressRelease don't require timers themselves,
+			// but they participate in elimination when other behaviors set timers
 		}
 	}
 
@@ -381,7 +381,7 @@ func fireWinner(
 	winner *timers.Candidate,
 	cfg *config.Config,
 	loopState *executor.LoopState,
-	injector *evdev.InputDevice,
+	outputs executor.Outputs,
 	virtual *evdev.InputDevice,
 	modifiers matcher.ModifierState,
 	ctx context.Context,
@@ -395,7 +395,7 @@ func fireWinner(
 		KeyCode:   keyCode,
 		Value:     value,
 		Virtual:   virtual,
-		Injector:  injector,
+		Outputs:   outputs,
 		Modifiers: modifiers,
 		Config:    cfg,
 		LoopState: loopState,
@@ -405,7 +405,7 @@ func fireWinner(
 	case config.BehaviorNormal:
 		common.LogMatch(combo, combo)
 		if s.Repeat {
-			loopState.ToggleLoop(combo, s, cfg)
+			loopState.ToggleLoop(combo, s, execCtx)
 		} else {
 			resolvedCmd := cfg.ResolveCommand(s.Commands[0])
 			common.LogTrigger(resolvedCmd)
@@ -441,7 +441,7 @@ func fireWinner(
 		common.LogMatch(combo+".hold", combo)
 		resolvedCmd := cfg.ResolveCommand(s.Commands[0])
 		if s.Repeat {
-			loopState.StartLoop(combo, s, cfg)
+			loopState.StartLoop(combo, s, execCtx)
 			select {
 			case <-ctx.Done():
 			case <-state.ReleaseCh:
@@ -449,12 +449,17 @@ func fireWinner(
 			loopState.StopLoop(combo)
 		} else if strings.HasPrefix(resolvedCmd, ">>") {
 			// Remap hold forever - needs special lifecycle management
-			loopState.StartHeldProcess(combo, s, cfg, injector, modifiers)
+			if err := loopState.StartHeldProcess(combo, s, execCtx); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to start held remap for %s: %v\n", combo, err)
+				return
+			}
 			select {
 			case <-ctx.Done():
 			case <-state.ReleaseCh:
 			}
-			loopState.StopHeldProcess(combo, injector)
+			if err := loopState.StopHeldProcess(combo); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to stop held remap for %s: %v\n", combo, err)
+			}
 		} else {
 			common.LogTrigger(resolvedCmd)
 			executor.Run(resolvedCmd, execCtx)

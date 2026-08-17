@@ -1,6 +1,8 @@
 package executor
 
 import (
+	"fmt"
+	"os"
 	"strings"
 
 	"github.com/deprecatedluar/akeyshually/internal/config"
@@ -12,20 +14,28 @@ type ExecContext struct {
 	KeyCode   uint16
 	Value     int32
 	Virtual   *evdev.InputDevice
-	Injector  *evdev.InputDevice
+	Outputs   Outputs
 	Modifiers matcher.ModifierState
 	Config    *config.Config
 	LoopState *LoopState
 }
 
 func Run(cmd string, ctx ExecContext) {
+	if err := run(cmd, ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "Execution error for %q: %v\n", cmd, err)
+	}
+}
+
+func run(cmd string, ctx ExecContext) error {
 	switch {
 	case cmd == "":
 		passthrough(ctx)
+		return nil
 	case isRemap(cmd):
-		runRemap(cmd, ctx)
+		return runRemap(cmd, ctx)
 	default:
 		runShell(cmd, ctx)
+		return nil
 	}
 }
 

@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/deprecatedluar/akeyshually/internal/common"
 	"github.com/deprecatedluar/akeyshually/internal/config"
@@ -14,7 +15,7 @@ import (
 	evdev "github.com/holoplot/go-evdev"
 )
 
-func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Config, loopState *executor.LoopState, injector *evdev.InputDevice, virtual *evdev.InputDevice, stateMap *timers.StateMap, emittedTracker *timers.EmittedModifierTracker) bool {
+func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Config, loopState *executor.LoopState, outputs executor.Outputs, virtual *evdev.InputDevice, stateMap *timers.StateMap, emittedTracker *timers.EmittedModifierTracker) bool {
 	common.LogKey(keys.GetKeyName(code), code)
 	m.ClearTapCandidate()
 
@@ -75,7 +76,7 @@ func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Confi
 		// Check for lone modifier shortcuts (super.doubletap, super.pressrelease, etc.)
 		combo = keys.GetKeyName(code) // "super", "ctrl", "alt", or "shift"
 		shortcuts = m.GetShortcuts(combo)
-		if len(shortcuts) == 0 {
+		if len(shortcuts) == 0 && !cfg.EscapeMap[combo] {
 			return false // No shortcuts, behave as normal modifier
 		}
 		// Fall through to ladder logic below
@@ -161,7 +162,7 @@ func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Confi
 	candidates := timers.BuildCandidates(shortcuts)
 
 	// No candidates means only switch/eager behaviors (already handled above)
-	if len(candidates) == 0 {
+	if len(candidates) == 0 && !cfg.EscapeMap[combo] {
 		return suppress
 	}
 
@@ -171,11 +172,11 @@ func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Confi
 	state := timers.NewComboState(cancel)
 	common.LogDebug(">>> ADDING %s to stateMap, launching goroutine", combo)
 	stateMap.Set(combo, state)
-	go ladder.Run(ctx, state, combo, code, value, candidates, cfg, loopState, injector, virtual, modifiers, stateMap, emittedTracker, cfg.ParsedShortcuts)
+	go ladder.Run(ctx, state, combo, code, value, candidates, cfg, loopState, outputs, virtual, modifiers, stateMap, emittedTracker, cfg.ParsedShortcuts)
 	return true
 }
 
-func HandleRelease(code uint16, value int32, m *matcher.Matcher, cfg *config.Config, loopState *executor.LoopState, injector *evdev.InputDevice, virtual *evdev.InputDevice, stateMap *timers.StateMap, emittedTracker *timers.EmittedModifierTracker) bool {
+func HandleRelease(code uint16, value int32, m *matcher.Matcher, cfg *config.Config, loopState *executor.LoopState, outputs executor.Outputs, virtual *evdev.InputDevice, stateMap *timers.StateMap, emittedTracker *timers.EmittedModifierTracker) bool {
 	if matcher.IsModifierKey(code) {
 		combo := keys.GetKeyName(code)
 		common.LogDebug("Modifier %s released", combo)
@@ -188,7 +189,7 @@ func HandleRelease(code uint16, value int32, m *matcher.Matcher, cfg *config.Con
 				KeyCode:   code,
 				Value:     value,
 				Virtual:   virtual,
-				Injector:  injector,
+				Outputs:   outputs,
 				Modifiers: m.GetCurrentModifiers(),
 				Config:    cfg,
 				LoopState: loopState,
@@ -227,7 +228,9 @@ func HandleRelease(code uint16, value int32, m *matcher.Matcher, cfg *config.Con
 
 	// No active goroutine - stop any sustained processes
 	loopState.StopLoop(combo)
-	loopState.StopHeldProcess(combo, injector)
+	if err := loopState.StopHeldProcess(combo); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to stop held remap for %s: %v\n", combo, err)
+	}
 	return false
 }
 

@@ -2,6 +2,8 @@ package executor
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -9,44 +11,66 @@ import (
 
 	"github.com/deprecatedluar/akeyshually/internal/common"
 	"github.com/deprecatedluar/akeyshually/internal/config"
-	"github.com/deprecatedluar/akeyshually/internal/matcher"
-	evdev "github.com/holoplot/go-evdev"
 )
+
+type heldOutput struct {
+	Output *EventSink
+	Codes  []uint16
+}
+
+type activeLoop struct {
+	cancel context.CancelFunc
+	id     uint64
+}
 
 // LoopState tracks active repeat loops and sustained processes across key events.
 type LoopState struct {
 	Mu             sync.Mutex
-	Active         map[string]context.CancelFunc // repeat loops
-	HeldProcesses  map[string]*exec.Cmd          // sustained whileheld processes
-	HeldKeys       map[string][]uint16           // sustained remap hold keys
-	PersistentHeld map[string][]uint16           // >> persistent remap keys
+	Active         map[string]activeLoop // repeat loops
+	HeldProcesses  map[string]*exec.Cmd  // sustained whileheld processes
+	HeldKeys       map[string]heldOutput // sustained remap hold keys
+	PersistentHeld map[string]heldOutput // >> persistent remap keys
+	nextLoopID     uint64
 }
 
 func NewLoopState() *LoopState {
 	return &LoopState{
-		Active:         make(map[string]context.CancelFunc),
+		Active:         make(map[string]activeLoop),
 		HeldProcesses:  make(map[string]*exec.Cmd),
-		HeldKeys:       make(map[string][]uint16),
-		PersistentHeld: make(map[string][]uint16),
+		HeldKeys:       make(map[string]heldOutput),
+		PersistentHeld: make(map[string]heldOutput),
 	}
 }
 
 // StartLoop starts a repeat loop for the given combo
-func (s *LoopState) StartLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Config) {
+func (s *LoopState) StartLoop(combo string, shortcut *config.ParsedShortcut, execCtx ExecContext) {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
 
-	if cancel, exists := s.Active[combo]; exists {
-		cancel()
+	if active, exists := s.Active[combo]; exists {
+		active.cancel()
 	}
 
-	interval := intervalOrDefault(shortcut.Interval, cfg.Settings.DefaultInterval)
+	interval := intervalOrDefault(shortcut.Interval, execCtx.Config.Settings.DefaultInterval)
 	ctx, cancel := context.WithCancel(context.Background())
-	s.Active[combo] = cancel
+	s.nextLoopID++
+	loopID := s.nextLoopID
+	s.Active[combo] = activeLoop{cancel: cancel, id: loopID}
 
-	resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
+	resolvedCmd := execCtx.Config.ResolveCommand(shortcut.Commands[0])
 	common.LogTrigger(resolvedCmd)
-	go runTickerLoop(ctx, interval, func() { Execute(resolvedCmd, cfg) })
+	go func() {
+		err := runTickerLoop(ctx, interval, func() error { return run(resolvedCmd, execCtx) })
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Repeat loop stopped: %v\n", err)
+		}
+
+		s.Mu.Lock()
+		if active, exists := s.Active[combo]; exists && active.id == loopID {
+			delete(s.Active, combo)
+		}
+		s.Mu.Unlock()
+	}()
 }
 
 // StopLoop stops a repeat loop for the given combo
@@ -54,30 +78,39 @@ func (s *LoopState) StopLoop(combo string) {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
 
-	if cancel, exists := s.Active[combo]; exists {
-		cancel()
+	if active, exists := s.Active[combo]; exists {
+		active.cancel()
 		delete(s.Active, combo)
 	}
 }
 
 // StartHeldProcess starts a sustained process or remap for the given combo
-func (s *LoopState) StartHeldProcess(combo string, shortcut *config.ParsedShortcut, cfg *config.Config, injector *evdev.InputDevice, heldModifiers matcher.ModifierState) {
+func (s *LoopState) StartHeldProcess(combo string, shortcut *config.ParsedShortcut, execCtx ExecContext) error {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
 
-	resolvedCmd := cfg.ResolveCommand(shortcut.Commands[0])
+	resolvedCmd := execCtx.Config.ResolveCommand(shortcut.Commands[0])
 
 	// Check if this is a remap command (starts with >>)
 	if strings.HasPrefix(resolvedCmd, ">>") {
 		target := resolvedCmd[2:]
-		if codes, exists := s.HeldKeys[combo]; exists {
-			EmitKeysUp(injector, codes)
+		output, err := outputForTarget(execCtx.Outputs, target)
+		if err != nil {
+			return err
 		}
-		codes := EmitKeysDown(injector, target, heldModifiers)
+		if held, exists := s.HeldKeys[combo]; exists {
+			if err := EmitKeysUp(held.Output, held.Codes); err != nil {
+				return err
+			}
+		}
+		codes, err := EmitKeysDown(output, target, execCtx.Modifiers)
+		if err != nil {
+			return err
+		}
 		if len(codes) > 0 {
-			s.HeldKeys[combo] = codes
+			s.HeldKeys[combo] = heldOutput{Output: output, Codes: codes}
 		}
-		return
+		return nil
 	}
 
 	// Shell command
@@ -86,50 +119,56 @@ func (s *LoopState) StartHeldProcess(combo string, shortcut *config.ParsedShortc
 	}
 
 	common.LogTrigger(resolvedCmd)
-	cmd := ExecuteTracked(resolvedCmd, cfg)
+	cmd := ExecuteTracked(resolvedCmd, execCtx.Config)
 	if cmd != nil {
 		s.HeldProcesses[combo] = cmd
 	}
+	return nil
 }
 
 // StopHeldProcess stops a sustained process or remap for the given combo
-func (s *LoopState) StopHeldProcess(combo string, injector *evdev.InputDevice) {
+func (s *LoopState) StopHeldProcess(combo string) error {
 	s.Mu.Lock()
 	defer s.Mu.Unlock()
 
-	if codes, exists := s.HeldKeys[combo]; exists {
-		EmitKeysUp(injector, codes)
+	if held, exists := s.HeldKeys[combo]; exists {
+		if err := EmitKeysUp(held.Output, held.Codes); err != nil {
+			return err
+		}
 		delete(s.HeldKeys, combo)
-		return
+		return nil
 	}
 
 	// Fallback: match by base key in case modifier state drifted
 	baseKey := baseKeyFromCombo(combo)
-	for storedCombo, codes := range s.HeldKeys {
+	for storedCombo, held := range s.HeldKeys {
 		if baseKeyFromCombo(storedCombo) == baseKey {
-			EmitKeysUp(injector, codes)
+			if err := EmitKeysUp(held.Output, held.Codes); err != nil {
+				return err
+			}
 			delete(s.HeldKeys, storedCombo)
-			return
+			return nil
 		}
 	}
 
 	if cmd, exists := s.HeldProcesses[combo]; exists {
 		StopProcess(cmd)
 		delete(s.HeldProcesses, combo)
-		return
+		return nil
 	}
 
 	for storedCombo, cmd := range s.HeldProcesses {
 		if baseKeyFromCombo(storedCombo) == baseKey {
 			StopProcess(cmd)
 			delete(s.HeldProcesses, storedCombo)
-			return
+			return nil
 		}
 	}
+	return nil
 }
 
 // ToggleLoop toggles a repeat loop on/off for the given combo
-func (s *LoopState) ToggleLoop(combo string, shortcut *config.ParsedShortcut, cfg *config.Config) {
+func (s *LoopState) ToggleLoop(combo string, shortcut *config.ParsedShortcut, execCtx ExecContext) {
 	s.Mu.Lock()
 	_, running := s.Active[combo]
 	s.Mu.Unlock()
@@ -137,21 +176,23 @@ func (s *LoopState) ToggleLoop(combo string, shortcut *config.ParsedShortcut, cf
 	if running {
 		s.StopLoop(combo)
 	} else {
-		s.StartLoop(combo, shortcut, cfg)
+		s.StartLoop(combo, shortcut, execCtx)
 	}
 }
 
 // --- Helper functions ---
 
-func runTickerLoop(ctx context.Context, interval float64, fn func()) {
+func runTickerLoop(ctx context.Context, interval float64, fn func() error) error {
 	ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return nil
 		case <-ticker.C:
-			fn()
+			if err := fn(); err != nil {
+				return err
+			}
 		}
 	}
 }

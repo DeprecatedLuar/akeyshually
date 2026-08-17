@@ -224,13 +224,23 @@ func run(ctx context.Context, configPath string) error {
 		fmt.Printf("Monitoring %d mouse device(s) for tap cancellation\n", len(mice))
 	}
 
-	// Create shared key injector for remap output
-	injector, err := listener.CreateKeyInjector()
+	// Create focused output devices so keyboard remappers cannot capture pointer events.
+	keyboardInjector, err := listener.CreateKeyboardInjector()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to create key injector: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("create keyboard injector: %w", err)
 	}
-	defer evdev.DestroyDevice(injector)
+	defer destroyInjector("keyboard", keyboardInjector)
+
+	pointerInjector, err := listener.CreatePointerInjector()
+	if err != nil {
+		return fmt.Errorf("create pointer injector: %w", err)
+	}
+	defer destroyInjector("pointer", pointerInjector)
+
+	outputs := executor.Outputs{
+		Keyboard: executor.NewEventSink(keyboardInjector),
+		Pointer:  executor.NewEventSink(pointerInjector),
+	}
 
 	// Create shared loop state
 	loopState := executor.NewLoopState()
@@ -259,8 +269,9 @@ func run(ctx context.Context, configPath string) error {
 			execCtx := executor.ExecContext{
 				Modifiers: m.GetCurrentModifiers(),
 				LoopState: loopState,
-				Injector:  injector,
+				Outputs:   outputs,
 				Virtual:   p.Virtual,
+				Config:    cfg,
 			}
 
 			handler := func(code uint16, value int32) bool {
@@ -280,10 +291,10 @@ func run(ctx context.Context, configPath string) error {
 					return false
 				}
 				if value == 1 {
-					return handlers.HandlePress(code, value, m, cfg, loopState, injector, p.Virtual, stateMap, emittedTracker)
+					return handlers.HandlePress(code, value, m, cfg, loopState, outputs, p.Virtual, stateMap, emittedTracker)
 				}
 				if value == 0 {
-					return handlers.HandleRelease(code, value, m, cfg, loopState, injector, p.Virtual, stateMap, emittedTracker)
+					return handlers.HandleRelease(code, value, m, cfg, loopState, outputs, p.Virtual, stateMap, emittedTracker)
 				}
 				return false
 			}
@@ -313,8 +324,9 @@ func run(ctx context.Context, configPath string) error {
 			execCtx := executor.ExecContext{
 				Modifiers: m.GetCurrentModifiers(),
 				LoopState: loopState,
-				Injector:  injector,
+				Outputs:   outputs,
 				Virtual:   p.Virtual,
+				Config:    cfg,
 			}
 
 			handler := func(code uint16, value int32) bool {
@@ -334,10 +346,10 @@ func run(ctx context.Context, configPath string) error {
 					return false
 				}
 				if value == 1 {
-					return handlers.HandlePress(code, value, m, cfg, loopState, injector, p.Virtual, stateMap, emittedTracker)
+					return handlers.HandlePress(code, value, m, cfg, loopState, outputs, p.Virtual, stateMap, emittedTracker)
 				}
 				if value == 0 {
-					return handlers.HandleRelease(code, value, m, cfg, loopState, injector, p.Virtual, stateMap, emittedTracker)
+					return handlers.HandleRelease(code, value, m, cfg, loopState, outputs, p.Virtual, stateMap, emittedTracker)
 				}
 				return false
 			}
@@ -386,4 +398,10 @@ func run(ctx context.Context, configPath string) error {
 	}
 
 	return nil
+}
+
+func destroyInjector(kind string, device *evdev.InputDevice) {
+	if err := evdev.DestroyDevice(device); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to destroy %s injector: %v\n", kind, err)
+	}
 }

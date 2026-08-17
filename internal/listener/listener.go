@@ -16,13 +16,15 @@ const (
 	reconnectMaxAttempts = 30
 	reconnectInterval    = 2 * time.Second
 
-	virtualDeviceSuffix = " (" + common.AppName + ")"
-	injectorDeviceName  = common.AppName + "-injector"
-	injectorKeyCount    = 255
-	injectorBusType     = 0x03
-	injectorVendorID    = 0x0001
-	injectorProductID   = 0x0001
-	injectorVersion     = 1
+	virtualDeviceSuffix       = " (" + common.AppName + ")"
+	keyboardInjectorName      = common.AppName + "-injector"
+	pointerInjectorName       = common.AppName + "-pointer-injector"
+	injectorKeyCount          = 255
+	injectorBusType           = 0x03
+	injectorVendorID          = 0x0001
+	keyboardInjectorProductID = 0x0001
+	pointerInjectorProductID  = 0x0002
+	injectorVersion           = 1
 )
 
 var knownRemappers = []string{"keyd", "kanata", "kmonad", "xremap"}
@@ -576,22 +578,42 @@ func ListenMouse(dev *evdev.InputDevice, handler MouseButtonHandler) error {
 	}
 }
 
-// CreateKeyInjector creates a shared uinput keyboard with full key capabilities for remap injection.
-func CreateKeyInjector() (*evdev.InputDevice, error) {
+// CreateKeyboardInjector creates a keyboard-only uinput device for key remaps.
+func CreateKeyboardInjector() (*evdev.InputDevice, error) {
 	codes := make([]evdev.EvCode, injectorKeyCount)
 	for i := range codes {
 		codes[i] = evdev.EvCode(i + 1)
 	}
-	// Add mouse button codes (BTN_LEFT through BTN_EXTRA: 0x110-0x116)
-	codes = append(codes, evdev.BTN_LEFT, evdev.BTN_RIGHT, evdev.BTN_MIDDLE,
-		evdev.BTN_SIDE, evdev.BTN_EXTRA, evdev.BTN_FORWARD, evdev.BTN_BACK)
-	return evdev.CreateDevice(injectorDeviceName, evdev.InputID{BusType: injectorBusType, Vendor: injectorVendorID, Product: injectorProductID, Version: injectorVersion},
+	return evdev.CreateDevice(keyboardInjectorName, injectorID(keyboardInjectorProductID),
 		map[evdev.EvType][]evdev.EvCode{
 			evdev.EV_KEY: codes,
-			evdev.EV_REL: []evdev.EvCode{evdev.REL_WHEEL, evdev.REL_HWHEEL, evdev.REL_WHEEL_HI_RES, evdev.REL_HWHEEL_HI_RES},
 		})
 }
 
+// CreatePointerInjector creates a pointer-only uinput device for existing
+// mouse-button and wheel remaps.
+func CreatePointerInjector() (*evdev.InputDevice, error) {
+	return evdev.CreateDevice(pointerInjectorName, injectorID(pointerInjectorProductID),
+		map[evdev.EvType][]evdev.EvCode{
+			evdev.EV_KEY: {
+				evdev.BTN_LEFT, evdev.BTN_RIGHT, evdev.BTN_MIDDLE,
+				evdev.BTN_SIDE, evdev.BTN_EXTRA, evdev.BTN_FORWARD, evdev.BTN_BACK,
+			},
+			evdev.EV_REL: {
+				evdev.REL_WHEEL, evdev.REL_HWHEEL,
+				evdev.REL_WHEEL_HI_RES, evdev.REL_HWHEEL_HI_RES,
+			},
+		})
+}
+
+func injectorID(productID uint16) evdev.InputID {
+	return evdev.InputID{
+		BusType: injectorBusType,
+		Vendor:  injectorVendorID,
+		Product: productID,
+		Version: injectorVersion,
+	}
+}
 
 // IsMediaKey checks if a keycode is a media key (volume, brightness, playback)
 func IsMediaKey(code uint16) bool {
