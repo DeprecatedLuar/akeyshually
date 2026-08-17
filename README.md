@@ -322,9 +322,9 @@ devices = ["Huion Tablet", "Xbox Controller"]
 
 **CD controls (legacy):** `playcd`, `pausecd`, `stopcd`, `ejectcd`, `closecd`, `ejectclosecd`
 
-**Gamepad** (canonical names): `btn_south`, `btn_north`, `btn_east`, `btn_west`, `btn_tl`, `btn_tr`, `btn_tl2`, `btn_tr2`, `btn_start`, `btn_select`, `btn_mode`, `btn_thumbl`, `btn_thumbr`
+**Gamepad** (canonical names): `btn_south`, `btn_north`, `btn_east`, `btn_west`, `btn_tl`, `btn_tr`, `btn_tl2`, `btn_tr2`, `btn_start`, `btn_select`, `btn_mode`, `btn_thumbl`, `btn_thumbr`, `btn_dpad_up`, `btn_dpad_down`, `btn_dpad_left`, `btn_dpad_right`
 
-**Gamepad** (Xbox aliases): `gp_a`, `gp_b`, `gp_x`, `gp_y`, `gp_lb`, `gp_rb`, `gp_lt`, `gp_rt`, `gp_ls`, `gp_rs`, `gp_start`, `gp_select`, `gp_guide`
+**Gamepad** (Xbox aliases): `gp_a`, `gp_b`, `gp_x`, `gp_y`, `gp_lb`, `gp_rb`, `gp_lt`, `gp_rt`, `gp_ls`, `gp_rs`, `gp_start`, `gp_select`, `gp_guide`/`gp_home`, `gp_up`, `gp_down`, `gp_left`, `gp_right`
 
 **Gamepad** (PlayStation aliases): `gp_cross`, `gp_circle`, `gp_square`, `gp_triangle`, `gp_l1`, `gp_r1`, `gp_l2`, `gp_r2`, `gp_l3`, `gp_r3`
 
@@ -341,7 +341,7 @@ devices = ["Huion Tablet", "Xbox Controller"]
 - Extra: `btn_side`, `btn_extra`
 - Use with remap prefix: `">lclick"`, `">rclick"`, `">middleclick"`, etc.
 
-**Axis (absolute):** `x`, `y`, `z`, `rx`, `ry`, `rz`, `abs_x`, `abs_y`, `abs_z`, `abs_rx`, `abs_ry`, `abs_rz`
+**Axis (absolute):** `lx`, `ly`, `rx`, `ry`, `rz`, `abs_x`, `abs_y`, `abs_z`, `abs_rx`, `abs_ry`, `abs_rz`. Bare `x`, `y`, and `z` are reserved for keyboard keys.
 - Use with direction suffix: `"rx+"`, `"abs_y-"`
 - Remap to scroll: `">scrollup"`, `">scrolldown"`, `">scrollleft"`, `">scrollright"` (or `">wheelup"`, `">wheeldown"`, `">wheelleft"`, `">wheelright"`)
 
@@ -528,6 +528,11 @@ Its still experimental but works, just need more testing and refinement.
 "rx-" = ">scrolldown"    # Axis RX negative direction → scroll down
 "abs_y+" = "volume_up"   # Any axis works, any command works
 ```
+
+ABS axes do not require touch contact. For touch-sensitive devices, a standard
+`BTN_TOUCH=0` release resets pending axis movement; Huion touch strips also retain
+their legacy `ABS_MISC=0` lift reset. The next axis sample establishes a fresh
+starting value, preventing a jump when the surface is touched again.
 
 **Why? You stupid or smt?:** The entire reason this project feature exists (besides being a natural extension) was to get my Huion Kamvas Pro 13 touchstrip working on NixOS. Traditional shortcut tools only handle keyboard events but have the entire boilerplate backend sitting on there to handle this as well. So I just made any hardware first-class.
 

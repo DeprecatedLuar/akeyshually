@@ -19,6 +19,8 @@ type AccumulatorMap map[string]float64
 // PrevValuesMap tracks previous raw values for delta calculation
 type PrevValuesMap map[uint16]int32
 
+const contactEndValue int32 = 0
+
 // BuildAbsInfoMap queries AbsInfo for all EV_ABS axes at device open
 func BuildAbsInfoMap(device *evdev.InputDevice) AbsInfoMap {
 	absInfoMap := make(AbsInfoMap)
@@ -70,6 +72,24 @@ func GetAxisDirection(prev, curr int32, info evdev.AbsInfo) string {
 	return ""
 }
 
+// ResetAbsState clears pending movement and forces the next axis event to
+// establish a fresh starting value.
+func ResetAbsState(accumulators AccumulatorMap, prevValues PrevValuesMap) {
+	clear(accumulators)
+	clear(prevValues)
+}
+
+// ResetAbsStateOnContactEnd treats contact end as an axis discontinuity.
+// BTN_TOUCH is the standard single-touch signal. ABS_MISC value 0 is retained
+// as a compatibility signal for Huion touch strips.
+func ResetAbsStateOnContactEnd(event evdev.InputEvent, accumulators AccumulatorMap, prevValues PrevValuesMap) {
+	standardTouchEnd := event.Type == evdev.EV_KEY && event.Code == evdev.BTN_TOUCH && event.Value == contactEndValue
+	legacyHuionTouchEnd := event.Type == evdev.EV_ABS && event.Code == evdev.ABS_MISC && event.Value == contactEndValue
+	if standardTouchEnd || legacyHuionTouchEnd {
+		ResetAbsState(accumulators, prevValues)
+	}
+}
+
 // HandleAbs processes an EV_ABS event
 // Returns true if event should be suppressed, false if it should be forwarded
 func HandleAbs(
@@ -78,28 +98,16 @@ func HandleAbs(
 	absInfoMap AbsInfoMap,
 	accumulators AccumulatorMap,
 	prevValues PrevValuesMap,
-	contactState *bool,
 	cfg *config.Config,
 	execCtx executor.ExecContext,
 ) bool {
 	axisName := keys.GetAbsName(code)
-	common.LogDebug("[ABS] code=%s(%d) value=%d contactState=%v", axisName, code, value, *contactState)
+	common.LogDebug("[ABS] code=%s(%d) value=%d", axisName, code, value)
 
-	// ABS_MISC: contact detection (15=touching, 0=lifted)
+	// ABS_MISC is not a bindable axis. Huion's value-0 contact-end quirk is
+	// handled by ResetAbsStateOnContactEnd before event routing reaches here.
 	if code == uint16(evdev.ABS_MISC) {
-		if value == 15 {
-			*contactState = true
-		} else if value == 0 {
-			*contactState = false
-			// Reset all accumulators and previous values on lift
-			for key := range accumulators {
-				delete(accumulators, key)
-			}
-			for key := range prevValues {
-				delete(prevValues, key)
-			}
-		}
-		return false // Always forward ABS_MISC
+		return false
 	}
 
 	// Look up axis info
@@ -121,16 +129,6 @@ func HandleAbs(
 		return false
 	}
 
-	// Analog axis: accumulate delta only if in contact
-	// Skip if not in contact (for touchpad/touchstrip)
-	if code == uint16(evdev.ABS_X) || code == uint16(evdev.ABS_Y) ||
-		code == uint16(evdev.ABS_RX) || code == uint16(evdev.ABS_RY) || code == uint16(evdev.ABS_RZ) {
-		if !*contactState {
-			common.LogDebug("[ABS] Skipping %s - not in contact", axisName)
-			return false
-		}
-	}
-
 	// Get previous value for delta calculation
 	prev, hasPrev := prevValues[code]
 	if !hasPrev {
@@ -150,14 +148,9 @@ func HandleAbs(
 	// Update previous value
 	prevValues[code] = value
 
-	// Build combo string (e.g., "rx+", "y-")
-	comboAxisName := axisName
-	// Strip ABS_ prefix for cleaner combo names
-	if len(comboAxisName) > 4 && comboAxisName[:4] == "ABS_" {
-		comboAxisName = comboAxisName[4:]
-	}
-	// Lowercase to match config normalization
-	combo := strings.ToLower(comboAxisName + direction)
+	// Runtime axis keys use canonical ABS names. Config aliases such as lx/rx
+	// are normalized to the same representation during parsing.
+	combo := strings.ToLower(axisName + direction)
 
 	// Accumulate delta (absolute value since direction is in the key)
 	delta := value - prev
@@ -183,7 +176,7 @@ func FlushAbs(
 
 	for combo, accumulated := range accumulators {
 		// Parse combo to extract axis name (strip direction suffix)
-		axisName := combo[:len(combo)-1] // Remove +/-
+		axisName := combo[:len(combo)-1]  // Remove +/-
 		direction := combo[len(combo)-1:] // Get +/-
 
 		// Find matching shortcut in config

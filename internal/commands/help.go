@@ -6,8 +6,8 @@ import (
 
 var (
 	helpRoot = gohelp.NewPage("akeyshually", "keyboard shortcut daemon").
-		Usage("akeyshually [command] [flags]").
-		Section("Commands",
+			Usage("akeyshually [command] [flags]").
+			Section("Commands",
 			gohelp.Item("(no command)", "Run the daemon in the foreground"),
 			gohelp.Item("stop", "Stop running daemon"),
 			gohelp.Item("restart", "Restart daemon (requires the systemd unit)"),
@@ -27,8 +27,8 @@ var (
 		Text("Config: ~/.config/akeyshually/")
 
 	helpConfig = gohelp.NewPage("config", "configuration file documentation").
-		Text("Config File: ~/.config/akeyshually/config.toml").
-		Section("[settings]",
+			Text("Config File: ~/.config/akeyshually/config.toml").
+			Section("[settings]",
 			gohelp.Item("default_interval", "Default interval for repeat behaviors (milliseconds)", "default_interval = 150"),
 			gohelp.Item("disable_media_keys", "Forward media keys to system", "disable_media_keys = false"),
 			gohelp.Item("shell", "Shell to use for commands (default: $SHELL, fallback: sh)", "shell = \"/bin/bash\""),
@@ -47,7 +47,7 @@ var (
 		Section("[shortcuts]",
 			gohelp.Item("Key modifiers", "super, ctrl, alt, shift (lowercase, no left/right distinction)"),
 			gohelp.Item("Keys", "lowercase letters, numbers, function keys, navigation, etc. (see 'help keys')"),
-			gohelp.Item("Axis inputs", "x, y, z, rx, ry, rz, abs_x, abs_y, etc. with +/- direction (see 'help axis')"),
+			gohelp.Item("Axis inputs", "lx, ly, rx, ry, rz, abs_x, abs_y, etc. with +/- direction (see 'help axis')"),
 			gohelp.Item("Remap output", ">key, >lclick, >scrollup - inject key/mouse/scroll events (see 'help remap')"),
 			gohelp.Item("Syntax", "Use + to separate modifiers and key", "\"super+t\" = \"alacritty\""),
 			gohelp.Item("Triggers", ".onpress (default), .hold, .doubletap, .taphold, .pressrelease, .longpress, etc."),
@@ -68,8 +68,8 @@ var (
 		Text("Auto-Reload: config file is automatically reloaded when modified (no restart needed)")
 
 	helpOverlays = gohelp.NewPage("overlays", "config overlay system").
-		Text("Overlay configs allow you to enable/disable groups of shortcuts dynamically without editing the main config.toml.").
-		Section("Use Cases",
+			Text("Overlay configs allow you to enable/disable groups of shortcuts dynamically without editing the main config.toml.").
+			Section("Use Cases",
 			gohelp.Item("Gaming mode", "Override window manager shortcuts while gaming"),
 			gohelp.Item("Work profiles", "Different shortcuts for different projects"),
 			gohelp.Item("Application sets", "Load shortcuts specific to certain apps"),
@@ -91,8 +91,8 @@ var (
 		)
 
 	helpModifiers = gohelp.NewPage("modifiers", "triggers and modifiers syntax reference").
-		Text("Triggers define when the action fires. Modifiers stack on top to change execution behavior.").
-		Section("Triggers",
+			Text("Triggers define when the action fires. Modifiers stack on top to change execution behavior.").
+			Section("Triggers",
 			gohelp.Item(".onpress", "Execute on key press (default, can be omitted)", "\"super+t\" = \"terminal\""),
 			gohelp.Item(".hold(ms)", "Fire once after held for duration (no process management)", "\"super+m.hold(500)\" = \"mute\""),
 			gohelp.Item(".doubletap(ms)", "Execute on confirmed double-tap; single keys only", "\"super.doubletap(270)\" = \"rofi -show drun\""),
@@ -115,10 +115,11 @@ var (
 		)
 
 	helpAxis = gohelp.NewPage("axis", "absolute axis and peripheral support").
-		Text("akeyshually supports absolute axis (ABS) events from evdev devices - bind any peripheral with axis input.").
-		Section("Axis Names",
-			gohelp.Item("Standard", "x, y, z, rx, ry, rz"),
+			Text("akeyshually supports absolute axis (ABS) events from evdev devices - bind any peripheral with axis input.").
+			Section("Axis Names",
+			gohelp.Item("Stick aliases", "lx, ly, rx, ry, rz"),
 			gohelp.Item("Absolute", "abs_x, abs_y, abs_z, abs_rx, abs_ry, abs_rz"),
+			gohelp.Item("Reserved", "Bare x, y, z are keyboard keys and cannot name axes"),
 		).
 		Section("Syntax",
 			gohelp.Item("Direction suffix", "Append + or - to axis name for direction", "\"rx+\" or \"abs_y-\""),
@@ -136,8 +137,8 @@ var (
 		)
 
 	helpRemap = gohelp.NewPage("remap", "key and mouse button injection").
-		Text("Remap syntax (> prefix) injects keyboard keys, mouse buttons, and scroll events via evdev.").
-		Section("Syntax",
+			Text("Remap syntax (> prefix) injects keyboard keys, mouse buttons, and scroll events via evdev.").
+			Section("Syntax",
 			gohelp.Item(">key", "Tap key combo (press and release)", "\">return\", \">ctrl+c\", \">super+t\""),
 			gohelp.Item(">>key", "Hold key forever (until << releases)", "\">>shift\""),
 			gohelp.Item("<key", "Release single key", "\"<shift\""),
@@ -161,8 +162,8 @@ var (
 		)
 
 	helpKeys = gohelp.NewPage("keys", "complete list of available key names").
-		Text("All key names are case-insensitive. Aliases listed in parentheses.").
-		Section("Modifiers",
+			Text("All key names are case-insensitive. Aliases listed in parentheses.").
+			Section("Modifiers",
 			gohelp.Item("super", "Meta/Windows/Command key"),
 			gohelp.Item("ctrl", "Control key (alias: ctl)"),
 			gohelp.Item("alt", "Alt key"),
@@ -232,13 +233,15 @@ var (
 			gohelp.Item("btn_start, btn_select", "Start and Select buttons"),
 			gohelp.Item("btn_mode", "Mode/Guide/Home button"),
 			gohelp.Item("btn_thumbl, btn_thumbr", "Analog stick click buttons (left/right)"),
+			gohelp.Item("btn_dpad_up/down/left/right", "D-pad buttons"),
 		).
 		Section("Gamepad Buttons (Xbox Layout)",
 			gohelp.Item("gp_a, gp_b, gp_x, gp_y", "Face buttons (A/B/X/Y)"),
 			gohelp.Item("gp_lb, gp_rb", "Bumpers (left/right)"),
 			gohelp.Item("gp_lt, gp_rt", "Triggers (left/right)"),
 			gohelp.Item("gp_ls, gp_rs", "Stick buttons (left/right)"),
-			gohelp.Item("gp_start, gp_select, gp_guide", "System buttons"),
+			gohelp.Item("gp_start, gp_select, gp_guide/gp_home", "System buttons"),
+			gohelp.Item("gp_up, gp_down, gp_left, gp_right", "D-pad directions"),
 		).
 		Section("Gamepad Buttons (PlayStation Layout)",
 			gohelp.Item("gp_cross, gp_circle", "Face buttons (Cross/Circle)"),

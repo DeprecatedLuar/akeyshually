@@ -112,7 +112,6 @@ func TestValidateShortcutEntry_ValidConfig(t *testing.T) {
 	}
 }
 
-
 func TestValidateShortcutEntry_LongpressRepeatRejected(t *testing.T) {
 	err := validateShortcutEntry("super+t.longpress.repeat", "echo test", "test.toml", 0)
 	if err == nil {
@@ -234,5 +233,36 @@ func TestValidateShortcutEntry_AliasValidation(t *testing.T) {
 	}
 	if !strings.Contains(verr.Message, "unknownkey") {
 		t.Errorf("error should mention the unknown key, got: %s", verr.Message)
+	}
+}
+
+func TestValidateShortcutEntry_GamepadWMBindings(t *testing.T) {
+	bindings := map[string]interface{}{
+		"lx-":                   "ydotool mousemove -x -12 -y 0",
+		"lx+":                   "ydotool mousemove -x 12 -y 0",
+		"ly-":                   "ydotool mousemove -x 0 -y -12",
+		"ly+":                   "ydotool mousemove -x 0 -y 12",
+		"rx-":                   ">scrollleft",
+		"rx+":                   ">scrollright",
+		"ry-":                   ">scrollup",
+		"ry+":                   ">scrolldown",
+		"gp_up.pressrelease":    []interface{}{">>up", "<up"},
+		"gp_down.pressrelease":  []interface{}{">>down", "<down"},
+		"gp_left.pressrelease":  []interface{}{">>left", "<left"},
+		"gp_right.pressrelease": []interface{}{">>right", "<right"},
+	}
+
+	for shortcut, command := range bindings {
+		if err := validateShortcutEntry(shortcut, command, "gamepad-wm.toml", 0); err != nil {
+			t.Errorf("binding %q failed validation: %v", shortcut, err)
+		}
+	}
+}
+
+func TestValidateShortcutEntryRejectsBareKeyboardAxisName(t *testing.T) {
+	for _, shortcut := range []string{"x+", "y-", "z+"} {
+		if err := validateShortcutEntry(shortcut, "command", "test.toml", 0); err == nil {
+			t.Errorf("ambiguous axis shortcut %q unexpectedly validated", shortcut)
+		}
 	}
 }

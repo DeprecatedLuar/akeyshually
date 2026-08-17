@@ -298,3 +298,18 @@ func TestRemapReleaseAll(t *testing.T) {
 		t.Errorf("Commands = %v, want [\"<<\"]", ps.Commands)
 	}
 }
+
+func TestParseShortcutNormalizesAbsoluteAxisPrefix(t *testing.T) {
+	for _, shortcut := range []string{"lx+", "abs_x+"} {
+		parsed, err := ParseShortcut(shortcut, "ydotool mousemove -x 12 -y 0")
+		if err != nil {
+			t.Fatalf("ParseShortcut(%q) error = %v", shortcut, err)
+		}
+		if parsed.KeyCombo != "abs_x" {
+			t.Errorf("ParseShortcut(%q) KeyCombo = %q, want abs_x", shortcut, parsed.KeyCombo)
+		}
+		if parsed.Direction != "+" {
+			t.Errorf("ParseShortcut(%q) Direction = %q, want +", shortcut, parsed.Direction)
+		}
+	}
+}

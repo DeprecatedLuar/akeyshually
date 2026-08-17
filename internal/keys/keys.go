@@ -26,7 +26,7 @@ var KeyCodeMap = map[string]uint16{
 	"semicolon": evdev.KEY_SEMICOLON, ";": evdev.KEY_SEMICOLON,
 	"ro":    evdev.KEY_RO,
 	"102nd": evdev.KEY_102ND,
-	"kp0": evdev.KEY_KP0, "kp1": evdev.KEY_KP1, "kp2": evdev.KEY_KP2, "kp3": evdev.KEY_KP3,
+	"kp0":   evdev.KEY_KP0, "kp1": evdev.KEY_KP1, "kp2": evdev.KEY_KP2, "kp3": evdev.KEY_KP3,
 	"kp4": evdev.KEY_KP4, "kp5": evdev.KEY_KP5, "kp6": evdev.KEY_KP6, "kp7": evdev.KEY_KP7,
 	"kp8": evdev.KEY_KP8, "kp9": evdev.KEY_KP9,
 	"kpplus": evdev.KEY_KPPLUS, "kpminus": evdev.KEY_KPMINUS,
@@ -45,18 +45,18 @@ var KeyCodeMap = map[string]uint16{
 	"pageup": evdev.KEY_PAGEUP, "pagedown": evdev.KEY_PAGEDOWN,
 	"delete": evdev.KEY_DELETE, "insert": evdev.KEY_INSERT,
 	"volumeup": evdev.KEY_VOLUMEUP, "volumedown": evdev.KEY_VOLUMEDOWN,
-	"mute":          evdev.KEY_MUTE,
-	"brightnessup":  evdev.KEY_BRIGHTNESSUP, "brightnessdown": evdev.KEY_BRIGHTNESSDOWN,
-	"playpause":     evdev.KEY_PLAYPAUSE, "play": evdev.KEY_PLAYPAUSE,
-	"nextsong":      evdev.KEY_NEXTSONG, "next": evdev.KEY_NEXTSONG,
-	"previoussong":  evdev.KEY_PREVIOUSSONG, "previous": evdev.KEY_PREVIOUSSONG,
-	"playcd":        evdev.KEY_PLAYCD, "pausecd": evdev.KEY_PAUSECD,
-	"stopcd":        evdev.KEY_STOPCD,
-	"ejectcd":       evdev.KEY_EJECTCD, "closecd": evdev.KEY_CLOSECD, "ejectclosecd": evdev.KEY_EJECTCLOSECD,
-	"calc":          evdev.KEY_CALC, "calculator": evdev.KEY_CALC,
+	"mute":         evdev.KEY_MUTE,
+	"brightnessup": evdev.KEY_BRIGHTNESSUP, "brightnessdown": evdev.KEY_BRIGHTNESSDOWN,
+	"playpause": evdev.KEY_PLAYPAUSE, "play": evdev.KEY_PLAYPAUSE,
+	"nextsong": evdev.KEY_NEXTSONG, "next": evdev.KEY_NEXTSONG,
+	"previoussong": evdev.KEY_PREVIOUSSONG, "previous": evdev.KEY_PREVIOUSSONG,
+	"playcd": evdev.KEY_PLAYCD, "pausecd": evdev.KEY_PAUSECD,
+	"stopcd":  evdev.KEY_STOPCD,
+	"ejectcd": evdev.KEY_EJECTCD, "closecd": evdev.KEY_CLOSECD, "ejectclosecd": evdev.KEY_EJECTCLOSECD,
+	"calc": evdev.KEY_CALC, "calculator": evdev.KEY_CALC,
 	// Modifier keys
 	"super": evdev.KEY_LEFTMETA, "ctrl": evdev.KEY_LEFTCTRL, "ctl": evdev.KEY_LEFTCTRL,
-	"alt":   evdev.KEY_LEFTALT, "shift": evdev.KEY_LEFTSHIFT,
+	"alt": evdev.KEY_LEFTALT, "shift": evdev.KEY_LEFTSHIFT,
 	// Generic/tablet buttons (BTN_0..BTN_9)
 	"btn_0": evdev.BTN_0, "btn_1": evdev.BTN_1, "btn_2": evdev.BTN_2, "btn_3": evdev.BTN_3,
 	"btn_4": evdev.BTN_4, "btn_5": evdev.BTN_5, "btn_6": evdev.BTN_6, "btn_7": evdev.BTN_7,
@@ -71,13 +71,19 @@ var KeyCodeMap = map[string]uint16{
 	"btn_start": evdev.BTN_START, "btn_select": evdev.BTN_SELECT, "btn_mode": evdev.BTN_MODE,
 	// Gamepad analog stick buttons
 	"btn_thumbl": evdev.BTN_THUMBL, "btn_thumbr": evdev.BTN_THUMBR,
+	// Gamepad D-pad buttons
+	"btn_dpad_up": evdev.BTN_DPAD_UP, "btn_dpad_down": evdev.BTN_DPAD_DOWN,
+	"btn_dpad_left": evdev.BTN_DPAD_LEFT, "btn_dpad_right": evdev.BTN_DPAD_RIGHT,
 	// Gamepad aliases - Xbox naming (industry standard layout)
 	"gp_a": evdev.BTN_SOUTH, "gp_b": evdev.BTN_EAST,
 	"gp_x": evdev.BTN_WEST, "gp_y": evdev.BTN_NORTH,
 	"gp_lb": evdev.BTN_TL, "gp_rb": evdev.BTN_TR,
 	"gp_lt": evdev.BTN_TL2, "gp_rt": evdev.BTN_TR2,
 	"gp_ls": evdev.BTN_THUMBL, "gp_rs": evdev.BTN_THUMBR,
-	"gp_start": evdev.BTN_START, "gp_select": evdev.BTN_SELECT, "gp_guide": evdev.BTN_MODE,
+	"gp_start": evdev.BTN_START, "gp_select": evdev.BTN_SELECT,
+	"gp_guide": evdev.BTN_MODE, "gp_home": evdev.BTN_MODE,
+	"gp_up": evdev.BTN_DPAD_UP, "gp_down": evdev.BTN_DPAD_DOWN,
+	"gp_left": evdev.BTN_DPAD_LEFT, "gp_right": evdev.BTN_DPAD_RIGHT,
 	// Gamepad aliases - PlayStation naming
 	"gp_cross": evdev.BTN_SOUTH, "gp_circle": evdev.BTN_EAST,
 	"gp_square": evdev.BTN_WEST, "gp_triangle": evdev.BTN_NORTH,
@@ -93,7 +99,7 @@ var KeyCodeMap = map[string]uint16{
 	"btn_middle": evdev.BTN_MIDDLE, "mclick": evdev.BTN_MIDDLE, "middleclick": evdev.BTN_MIDDLE, "mbutton": evdev.BTN_MIDDLE, "middlebutton": evdev.BTN_MIDDLE, "mouse3": evdev.BTN_MIDDLE,
 	"btn_forward": evdev.BTN_FORWARD, "forward": evdev.BTN_FORWARD, "mouse4": evdev.BTN_FORWARD,
 	"btn_back": evdev.BTN_BACK, "back": evdev.BTN_BACK, "mouse5": evdev.BTN_BACK,
-	"btn_side": evdev.BTN_SIDE,
+	"btn_side":  evdev.BTN_SIDE,
 	"btn_extra": evdev.BTN_EXTRA,
 	// Output aliases for scroll/wheel (map to REL codes for remap output)
 	"scrollup": evdev.REL_WHEEL, "scrolldown": evdev.REL_WHEEL,
@@ -107,8 +113,8 @@ var AxisCodeMap = map[string]uint16{
 	// Canonical names
 	"abs_x": evdev.ABS_X, "abs_y": evdev.ABS_Y, "abs_z": evdev.ABS_Z,
 	"abs_rx": evdev.ABS_RX, "abs_ry": evdev.ABS_RY, "abs_rz": evdev.ABS_RZ,
-	// Shorthands (note: x/y/z are keyboard keys, so use abs_ prefix or rx/ry/rz which don't conflict)
-	"x": evdev.ABS_X, "y": evdev.ABS_Y, "z": evdev.ABS_Z,
+	// Stick aliases. Bare x/y/z are intentionally excluded because they are keyboard keys.
+	"lx": evdev.ABS_X, "ly": evdev.ABS_Y,
 	"rx": evdev.ABS_RX, "ry": evdev.ABS_RY, "rz": evdev.ABS_RZ,
 }
 
@@ -167,6 +173,8 @@ func init() {
 		evdev.BTN_TL2: "btn_tl2", evdev.BTN_TR2: "btn_tr2",
 		evdev.BTN_START: "btn_start", evdev.BTN_SELECT: "btn_select", evdev.BTN_MODE: "btn_mode",
 		evdev.BTN_THUMBL: "btn_thumbl", evdev.BTN_THUMBR: "btn_thumbr",
+		evdev.BTN_DPAD_UP: "btn_dpad_up", evdev.BTN_DPAD_DOWN: "btn_dpad_down",
+		evdev.BTN_DPAD_LEFT: "btn_dpad_left", evdev.BTN_DPAD_RIGHT: "btn_dpad_right",
 		evdev.BTN_TOOL_PEN: "btn_tool_pen", evdev.BTN_TOUCH: "btn_touch",
 		evdev.BTN_STYLUS: "btn_stylus", evdev.BTN_STYLUS2: "btn_stylus2",
 		// Mouse buttons canonical names

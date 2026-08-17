@@ -21,7 +21,11 @@ import (
 	"github.com/deprecatedluar/akeyshually/internal/timers"
 )
 
-const githubRepo = "DeprecatedLuar/akeyshually"
+const (
+	githubRepo      = "DeprecatedLuar/akeyshually"
+	keyReleaseValue = 0
+	keyPressValue   = 1
+)
 
 var version = "dev"
 
@@ -136,6 +140,49 @@ func handleConfigError(err error) {
 	}
 	common.NotifyError("akeyshually startup failed", fmt.Sprintf("Config error: %v", err))
 	os.Exit(1)
+}
+
+func newDeviceEventHandler(
+	m *matcher.Matcher,
+	cfg *config.Config,
+	loopState *executor.LoopState,
+	outputs executor.Outputs,
+	virtual *evdev.InputDevice,
+	stateMap *timers.StateMap,
+	emittedTracker *timers.EmittedModifierTracker,
+	absInfoMap handlers.AbsInfoMap,
+	accumulators handlers.AccumulatorMap,
+	prevValues handlers.PrevValuesMap,
+	execCtx executor.ExecContext,
+) listener.EventHandler {
+	return func(event evdev.InputEvent) bool {
+		handlers.ResetAbsStateOnContactEnd(event, accumulators, prevValues)
+
+		switch event.Type {
+		case evdev.EV_SYN:
+			if event.Code == evdev.SYN_REPORT {
+				handlers.FlushAbs(accumulators, absInfoMap, cfg, execCtx)
+			}
+			return false
+
+		case evdev.EV_ABS:
+			return handlers.HandleAbs(uint16(event.Code), event.Value, absInfoMap, accumulators, prevValues, cfg, execCtx)
+
+		case evdev.EV_KEY:
+			code := uint16(event.Code)
+			if cfg.Settings.DisableMediaKeys && listener.IsMediaKey(code) {
+				return false
+			}
+			switch event.Value {
+			case keyPressValue:
+				return handlers.HandlePress(code, event.Value, m, cfg, loopState, outputs, virtual, stateMap, emittedTracker)
+			case keyReleaseValue:
+				return handlers.HandleRelease(code, event.Value, m, cfg, loopState, outputs, virtual, stateMap, emittedTracker)
+			}
+		}
+
+		return false
+	}
 }
 
 func run(ctx context.Context, configPath string) error {
@@ -264,7 +311,6 @@ func run(ctx context.Context, configPath string) error {
 			absInfoMap := handlers.BuildAbsInfoMap(p.Physical)
 			accumulators := make(handlers.AccumulatorMap)
 			prevValues := make(handlers.PrevValuesMap)
-			contactState := false
 
 			execCtx := executor.ExecContext{
 				Modifiers: m.GetCurrentModifiers(),
@@ -274,30 +320,8 @@ func run(ctx context.Context, configPath string) error {
 				Config:    cfg,
 			}
 
-			handler := func(code uint16, value int32) bool {
-				// SYN event (flush accumulators)
-				if code == 0xFFFF {
-					handlers.FlushAbs(accumulators, absInfoMap, cfg, execCtx)
-					return false
-				}
-
-				// ABS event (check if code exists in device's ABS capabilities)
-				if _, isAbs := absInfoMap[code]; isAbs {
-					return handlers.HandleAbs(code, value, absInfoMap, accumulators, prevValues, &contactState, cfg, execCtx)
-				}
-
-				// KEY event
-				if cfg.Settings.DisableMediaKeys && listener.IsMediaKey(code) {
-					return false
-				}
-				if value == 1 {
-					return handlers.HandlePress(code, value, m, cfg, loopState, outputs, p.Virtual, stateMap, emittedTracker)
-				}
-				if value == 0 {
-					return handlers.HandleRelease(code, value, m, cfg, loopState, outputs, p.Virtual, stateMap, emittedTracker)
-				}
-				return false
-			}
+			handler := newDeviceEventHandler(m, cfg, loopState, outputs, p.Virtual, stateMap, emittedTracker,
+				absInfoMap, accumulators, prevValues, execCtx)
 			if err := listener.ListenWithReconnect(p, handler, listener.FindKeyboards, devName); err != nil {
 				fmt.Fprintf(os.Stderr, "Listener error: %v\n", err)
 			}
@@ -319,7 +343,6 @@ func run(ctx context.Context, configPath string) error {
 			absInfoMap := handlers.BuildAbsInfoMap(p.Physical)
 			accumulators := make(handlers.AccumulatorMap)
 			prevValues := make(handlers.PrevValuesMap)
-			contactState := false
 
 			execCtx := executor.ExecContext{
 				Modifiers: m.GetCurrentModifiers(),
@@ -329,30 +352,8 @@ func run(ctx context.Context, configPath string) error {
 				Config:    cfg,
 			}
 
-			handler := func(code uint16, value int32) bool {
-				// SYN event (flush accumulators)
-				if code == 0xFFFF {
-					handlers.FlushAbs(accumulators, absInfoMap, cfg, execCtx)
-					return false
-				}
-
-				// ABS event (check if code exists in device's ABS capabilities)
-				if _, isAbs := absInfoMap[code]; isAbs {
-					return handlers.HandleAbs(code, value, absInfoMap, accumulators, prevValues, &contactState, cfg, execCtx)
-				}
-
-				// KEY event
-				if cfg.Settings.DisableMediaKeys && listener.IsMediaKey(code) {
-					return false
-				}
-				if value == 1 {
-					return handlers.HandlePress(code, value, m, cfg, loopState, outputs, p.Virtual, stateMap, emittedTracker)
-				}
-				if value == 0 {
-					return handlers.HandleRelease(code, value, m, cfg, loopState, outputs, p.Virtual, stateMap, emittedTracker)
-				}
-				return false
-			}
+			handler := newDeviceEventHandler(m, cfg, loopState, outputs, p.Virtual, stateMap, emittedTracker,
+				absInfoMap, accumulators, prevValues, execCtx)
 			if err := listener.ListenWithReconnect(p, handler, func() (listener.DeviceResult, error) {
 				return listener.FindDeclaredDevices(declaredDeviceNames)
 			}, devName); err != nil {

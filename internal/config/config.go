@@ -10,18 +10,19 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+	"github.com/deprecatedluar/akeyshually/internal/keys"
 )
 
 //go:embed defaults/*
 var embeddedConfigs embed.FS
 
 type Settings struct {
-	DefaultInterval       float64  `toml:"default_interval"`        // >= 10 = milliseconds, < 10 = seconds (default: 150ms)
-	DisableMediaKeys      bool     `toml:"disable_media_keys"`      // Forward media keys to system (default: false)
-	Shell                 string   `toml:"shell"`                   // Optional: override $SHELL
-	EnvFile               string   `toml:"env_file"`                // Optional: source before commands
+	DefaultInterval       float64  `toml:"default_interval"`         // >= 10 = milliseconds, < 10 = seconds (default: 150ms)
+	DisableMediaKeys      bool     `toml:"disable_media_keys"`       // Forward media keys to system (default: false)
+	Shell                 string   `toml:"shell"`                    // Optional: override $SHELL
+	EnvFile               string   `toml:"env_file"`                 // Optional: source before commands
 	NotifyOnOverlayChange bool     `toml:"notify_on_overlay_change"` // Desktop notifications for overlay changes
-	Devices               []string `toml:"devices"`                 // Device name substrings to grab (case-insensitive)
+	Devices               []string `toml:"devices"`                  // Device name substrings to grab (case-insensitive)
 }
 
 const (
@@ -36,18 +37,18 @@ var defaultConfigFiles = []string{"config.toml", "akeyshually.service"}
 type BehaviorMode int
 
 const (
-	BehaviorNormal BehaviorMode = iota
-	BehaviorHold                // sustained while key held; 1 command
-	BehaviorLongPress           // fires once after threshold, done
+	BehaviorNormal    BehaviorMode = iota
+	BehaviorHold                   // sustained while key held; 1 command
+	BehaviorLongPress              // fires once after threshold, done
 	BehaviorSwitch
 	BehaviorDoubleTap
-	BehaviorPressRelease        // Commands[0] on press (can be ""), Commands[1] on release
-	BehaviorHoldRelease         // Commands[0] at hold threshold (can be ""), Commands[1] on release after threshold
-	BehaviorTapHold             // tap fires Commands[0], tap-then-hold sustains Commands[1]
-	BehaviorTapLongPress        // tap fires Commands[0], tap-then-longpress fires Commands[1] once
-	BehaviorTapPressRelease     // tap, then Commands[0] on second press, Commands[1] on release
-	BehaviorTapHoldRelease      // tap, then Commands[0] at hold threshold, Commands[1] on release
-	BehaviorEscapePending       // pseudo-candidate: prevents early resolution when escape hatches exist
+	BehaviorPressRelease    // Commands[0] on press (can be ""), Commands[1] on release
+	BehaviorHoldRelease     // Commands[0] at hold threshold (can be ""), Commands[1] on release after threshold
+	BehaviorTapHold         // tap fires Commands[0], tap-then-hold sustains Commands[1]
+	BehaviorTapLongPress    // tap fires Commands[0], tap-then-longpress fires Commands[1] once
+	BehaviorTapPressRelease // tap, then Commands[0] on second press, Commands[1] on release
+	BehaviorTapHoldRelease  // tap, then Commands[0] at hold threshold, Commands[1] on release
+	BehaviorEscapePending   // pseudo-candidate: prevents early resolution when escape hatches exist
 )
 
 type TimingMode int
@@ -58,7 +59,7 @@ const (
 )
 
 type ParsedShortcut struct {
-	KeyCombo     string       // "super+k" (without suffix)
+	KeyCombo     string // "super+k" (without suffix)
 	Behavior     BehaviorMode
 	Timing       TimingMode
 	Repeat       bool     // stacks on any trigger; stop condition follows trigger semantics
@@ -526,6 +527,14 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 		direction = "-"
 		combo = strings.TrimSuffix(combo, "-")
 	}
+	if direction != "" {
+		axisName := strings.ToLower(strings.TrimSpace(combo))
+		if axisCode, ok := keys.ResolveAbsCode(axisName); ok {
+			combo = strings.ToLower(keys.GetAbsName(axisCode))
+		} else {
+			combo = axisName
+		}
+	}
 
 	shortcut := &ParsedShortcut{
 		KeyCombo:    normalizeKeyCombo(combo),
@@ -704,7 +713,10 @@ func behaviorName(b BehaviorMode) string {
 // For "super+w", marks "super" -> true. For "super+shift+b", marks both "super" and "super+shift" -> true.
 func buildEscapeMap(shortcuts map[string][]*ParsedShortcut) map[string]bool {
 	escapeMap := make(map[string]bool)
-	for combo := range shortcuts {
+	for combo, shortcutList := range shortcuts {
+		if len(shortcutList) > 0 && shortcutList[0].Direction != "" {
+			continue
+		}
 		// Find last '+' and extract prefix
 		lastPlus := strings.LastIndex(combo, "+")
 		if lastPlus == -1 {

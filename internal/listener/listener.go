@@ -29,6 +29,11 @@ const (
 
 var knownRemappers = []string{"keyd", "kanata", "kmonad", "xremap"}
 
+var unsupportedCloneTypes = map[evdev.EvType]bool{
+	evdev.EV_FF:        true,
+	evdev.EV_FF_STATUS: true,
+}
+
 type KeyboardPair struct {
 	Physical *evdev.InputDevice
 	Virtual  *evdev.InputDevice
@@ -44,7 +49,25 @@ type DeviceResult struct {
 	Failures []FailedGrab
 }
 
-type KeyHandler func(code uint16, value int32) bool
+type EventHandler func(event evdev.InputEvent) bool
+
+type eventForwarder func(event *evdev.InputEvent) error
+
+func cloneWithoutOutputCapabilities(name string, dev *evdev.InputDevice) (*evdev.InputDevice, error) {
+	capabilities := make(map[evdev.EvType][]evdev.EvCode)
+	for _, eventType := range dev.CapableTypes() {
+		if unsupportedCloneTypes[eventType] {
+			continue
+		}
+		capabilities[eventType] = dev.CapableEvents(eventType)
+	}
+
+	id, err := dev.InputID()
+	if err != nil {
+		return nil, fmt.Errorf("get input device id: %w", err)
+	}
+	return evdev.CreateDevice(name, id, capabilities)
+}
 
 func FindKeyboards() (DeviceResult, error) {
 	paths, err := evdev.ListDevicePaths()
@@ -252,7 +275,7 @@ func hasAlphabetKeys(dev *evdev.InputDevice) bool {
 	return true
 }
 
-func Listen(pair KeyboardPair, handler KeyHandler) error {
+func Listen(pair KeyboardPair, handler EventHandler) error {
 	for {
 		event, err := pair.Physical.ReadOne()
 		if err != nil {
@@ -268,22 +291,29 @@ func Listen(pair KeyboardPair, handler KeyHandler) error {
 			return fmt.Errorf("read error: %w", err)
 		}
 
-		switch event.Type {
-		case evdev.EV_KEY, evdev.EV_ABS:
-			matched := handler(uint16(event.Code), event.Value)
-			if !matched {
-				pair.Virtual.WriteOne(event)
-			}
-		case evdev.EV_SYN:
-			// Use sentinel value 0xFFFF for SYN events (not a valid key/abs code)
-			handler(0xFFFF, event.Value)
-			// Always forward SYN regardless of handler return
-			pair.Virtual.WriteOne(event)
-		default:
-			// Forward all other events immediately
-			pair.Virtual.WriteOne(event)
+		if err := dispatchEvent(event, handler, pair.Virtual.WriteOne); err != nil {
+			return err
 		}
 	}
+}
+
+func dispatchEvent(event *evdev.InputEvent, handler EventHandler, forward eventForwarder) error {
+	switch event.Type {
+	case evdev.EV_KEY, evdev.EV_ABS:
+		if handler(*event) {
+			return nil
+		}
+	case evdev.EV_SYN:
+		// Synchronization events are observable by the handler but are never suppressed.
+		handler(*event)
+	default:
+		// Other event types bypass shortcut handling.
+	}
+
+	if err := forward(event); err != nil {
+		return fmt.Errorf("forward event type=%d code=%d: %w", event.Type, event.Code, err)
+	}
+	return nil
 }
 
 func Cleanup(pair KeyboardPair) {
@@ -414,7 +444,7 @@ func FindDeclaredDevices(matches []string) (DeviceResult, error) {
 			continue
 		}
 
-		virtual, err := evdev.CloneDevice(name+virtualDeviceSuffix, dev)
+		virtual, err := cloneWithoutOutputCapabilities(name+virtualDeviceSuffix, dev)
 		if err != nil {
 			failures = append(failures, FailedGrab{Name: name, Reason: err.Error()})
 			dev.Ungrab()
@@ -430,7 +460,7 @@ func FindDeclaredDevices(matches []string) (DeviceResult, error) {
 
 // ListenWithReconnect wraps Listen with automatic reconnection on device disconnect.
 // On ENODEV it calls findFn every 2 seconds (up to 30 attempts) to find the device by name.
-func ListenWithReconnect(pair KeyboardPair, handler KeyHandler, findFn func() (DeviceResult, error), deviceName string) error {
+func ListenWithReconnect(pair KeyboardPair, handler EventHandler, findFn func() (DeviceResult, error), deviceName string) error {
 	for {
 		err := Listen(pair, handler)
 		if err == nil {

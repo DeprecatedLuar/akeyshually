@@ -85,6 +85,9 @@ func New(parsedShortcuts map[string][]*config.ParsedShortcut) *Matcher {
 
 	for _, shortcutList := range parsedShortcuts {
 		for _, shortcut := range shortcutList {
+			if shortcut.Direction != "" {
+				continue
+			}
 			key := ShortcutKey{
 				Combo:    shortcut.KeyCombo,
 				Behavior: shortcut.Behavior,
