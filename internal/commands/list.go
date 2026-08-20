@@ -8,18 +8,12 @@ import (
 	"github.com/deprecatedluar/akeyshually/internal/config"
 )
 
-// List shows all config files and their enabled status
+// List shows all config files
 func List() {
 	configDir, err := config.GetConfigDir()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to get config directory: %v\n", err)
 		return
-	}
-
-	enabled, err := config.ReadEnabledState()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to read enabled state: %v\n", err)
-		enabled = []string{}
 	}
 
 	// List all .toml files
@@ -29,24 +23,13 @@ func List() {
 		return
 	}
 
-	enabledMap := make(map[string]bool)
-	for _, e := range enabled {
-		enabledMap[e] = true
-	}
-
-	fmt.Println("Configuration files:")
-	fmt.Printf("  config.toml         [base - always active]\n")
+	fmt.Println("config.toml")
 
 	for _, file := range files {
 		basename := filepath.Base(file)
 		if basename == "config.toml" {
 			continue
 		}
-
-		status := "[disabled]"
-		if enabledMap[basename] {
-			status = "[enabled]"
-		}
-		fmt.Printf("  %-20s %s\n", basename, status)
+		fmt.Println(basename)
 	}
 }

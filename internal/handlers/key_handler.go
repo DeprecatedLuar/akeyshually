@@ -53,7 +53,7 @@ func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Confi
 					stateMap.Delete(modName)
 					if virtual != nil {
 						ladder.EmitModifierKey(virtual, keys.ResolveKeyCode, modName, true)
-						emittedTracker.MarkEmitted(modName)
+						emittedTracker.MarkDown(modName)
 					}
 				}
 			}
@@ -76,8 +76,10 @@ func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Confi
 		// Check for lone modifier shortcuts (super.doubletap, super.pressrelease, etc.)
 		combo = keys.GetKeyName(code) // "super", "ctrl", "alt", or "shift"
 		shortcuts = m.GetShortcuts(combo)
-		if len(shortcuts) == 0 && !cfg.EscapeMap[combo] {
-			return false // No shortcuts, behave as normal modifier
+		if len(shortcuts) == 0 {
+			// No shortcuts: forward transparently, system now sees it down.
+			emittedTracker.MarkDown(combo)
+			return false
 		}
 		// Fall through to ladder logic below
 	} else {
@@ -109,7 +111,7 @@ func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Confi
 					stateMap.Delete(modName)
 					if virtual != nil {
 						ladder.EmitModifierKey(virtual, keys.ResolveKeyCode, modName, true)
-						emittedTracker.MarkEmitted(modName)
+						emittedTracker.MarkDown(modName)
 					}
 				}
 			}
@@ -132,6 +134,7 @@ func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Confi
 		shortcuts = m.GetShortcuts(combo)
 		if len(shortcuts) == 0 {
 			common.LogDebug("No shortcuts for %s, forwarding", combo)
+			restoreConsumedModifiers(virtual, modifiers, emittedTracker)
 			return false
 		}
 
@@ -162,7 +165,7 @@ func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Confi
 	candidates := timers.BuildCandidates(shortcuts)
 
 	// No candidates means only switch/eager behaviors (already handled above)
-	if len(candidates) == 0 && !cfg.EscapeMap[combo] {
+	if len(candidates) == 0 {
 		return suppress
 	}
 
@@ -204,14 +207,21 @@ func HandleRelease(code uint16, value int32, m *matcher.Matcher, cfg *config.Con
 			state.SignalRelease()
 		}
 
-		// If we emitted this modifier to system, also emit the release
-		if emittedTracker.WasEmitted(combo) {
+		// If the system currently sees this modifier as down because we
+		// synthesized it (escape hatch, deferred emit), emit the release
+		// ourselves and suppress the physical one.
+		if emittedTracker.IsDown(combo) {
 			common.LogDebug("Emitting %s release (we emitted the press)", combo)
-			ladder.EmitModifierKey(virtual, keys.ResolveKeyCode, combo, false)
-			emittedTracker.ClearEmitted(combo)
+			if virtual != nil {
+				ladder.EmitModifierKey(virtual, keys.ResolveKeyCode, combo, false)
+			}
+			emittedTracker.MarkUp(combo)
 			return true // Suppress original release since we emitted it
 		}
 
+		// Either forwarded transparently (system already tracking it) or
+		// already consumed by a matched combo (a redundant keyup is a no-op).
+		emittedTracker.MarkUp(combo)
 		common.LogDebug("Forwarding %s release to system", combo)
 		return false
 	}
@@ -232,6 +242,27 @@ func HandleRelease(code uint16, value int32, m *matcher.Matcher, cfg *config.Con
 		fmt.Fprintf(os.Stderr, "Failed to stop held remap for %s: %v\n", combo, err)
 	}
 	return false
+}
+
+// restoreConsumedModifiers re-asserts any physically held modifier that was
+// previously consumed by a matched combo (its keyup sent to the system) but
+// is still being forwarded transparently now that no combo matched. Without
+// this, e.g. holding ctrl through a "ctrl+up" combo and then pressing an
+// unrelated key like "c" would arrive as a bare "c" instead of "ctrl+c".
+func restoreConsumedModifiers(virtual *evdev.InputDevice, modifiers matcher.ModifierState, emittedTracker *timers.EmittedModifierTracker) {
+	restore := func(name string, held bool) {
+		if !held || emittedTracker.IsDown(name) {
+			return
+		}
+		if virtual != nil {
+			ladder.EmitModifierKey(virtual, keys.ResolveKeyCode, name, true)
+		}
+		emittedTracker.MarkDown(name)
+	}
+	restore("super", modifiers.Super)
+	restore("ctrl", modifiers.Ctrl)
+	restore("alt", modifiers.Alt)
+	restore("shift", modifiers.Shift)
 }
 
 func executeSwitchShortcut(combo string, shortcut *config.ParsedShortcut, m *matcher.Matcher, cfg *config.Config) {

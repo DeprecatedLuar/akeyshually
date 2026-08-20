@@ -16,6 +16,7 @@ var (
 			gohelp.Item("enable <file>", "Enable config overlay"),
 			gohelp.Item("disable <file>", "Disable config overlay"),
 			gohelp.Item("list", "List all config files and their status"),
+			gohelp.Item("status", "Show config files, enabled first"),
 			gohelp.Item("clear", "Disable all overlays"),
 			gohelp.Item("help [topic]", "Show this help message"),
 			gohelp.Item("version", "Show version information"),

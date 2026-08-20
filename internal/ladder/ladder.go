@@ -69,7 +69,7 @@ func Run(
 	// BUT: Skip early exit if the candidate is EscapePending (needs to wait for actual key events)
 	if len(candidates) == 1 && len(ladder) == 0 && candidates[0].Shortcut.Behavior != config.BehaviorEscapePending {
 		common.LogDebug(">>> LADDER %s: single candidate no timers, firing immediately", combo)
-		fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, outputs, virtual, modifiers, ctx, state, pressed)
+		fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, outputs, virtual, modifiers, ctx, state, pressed, emittedTracker)
 		return
 	}
 
@@ -144,6 +144,7 @@ func Run(
 				if timer != nil {
 					timer.Stop()
 				}
+				emitUnmatchedModifier(combo, virtual, emittedTracker, pressed)
 				return
 			}
 
@@ -153,7 +154,7 @@ func Run(
 				if timer != nil {
 					timer.Stop()
 				}
-				fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, outputs, virtual, modifiers, ctx, state, pressed)
+				fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, outputs, virtual, modifiers, ctx, state, pressed, emittedTracker)
 				return
 			}
 
@@ -172,6 +173,7 @@ func Run(
 				if timer != nil {
 					timer.Stop()
 				}
+				emitUnmatchedModifier(combo, virtual, emittedTracker, pressed)
 				return
 			}
 
@@ -181,7 +183,7 @@ func Run(
 				if timer != nil {
 					timer.Stop()
 				}
-				fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, outputs, virtual, modifiers, ctx, state, pressed)
+				fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, outputs, virtual, modifiers, ctx, state, pressed, emittedTracker)
 				return
 			}
 
@@ -198,22 +200,14 @@ func Run(
 			// Last standing wins
 			if len(candidates) == 1 {
 				common.LogDebug(">>> LADDER %s: WINNER=%s (last standing after timer)", combo, behaviorName(candidates[0].Shortcut.Behavior))
-				fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, outputs, virtual, modifiers, ctx, state, pressed)
+				fireWinner(combo, keyCode, value, &candidates[0], cfg, loopState, outputs, virtual, modifiers, ctx, state, pressed, emittedTracker)
 				return
 			}
 
 			// No winner yet (either 0 or multiple survivors)
 			if len(candidates) == 0 {
 				common.LogDebug(">>> LADDER %s: NO WINNER (all eliminated at phase %d)", combo, phase)
-
-				// If this is a modifier key that was suppressed, emit it now so system receives it
-				if isModifierCombo(combo) && virtual != nil {
-					common.LogDebug("Emitting unmatched modifier %s to system (pressed=%v)", combo, pressed)
-					EmitModifierKey(virtual, keys.ResolveKeyCode, combo, pressed)
-					if pressed {
-						emittedTracker.MarkEmitted(combo)
-					}
-				}
+				emitUnmatchedModifier(combo, virtual, emittedTracker, pressed)
 				return
 			}
 
@@ -244,9 +238,27 @@ func handleTransparentPress(combo string, candidates []timers.Candidate, virtual
 			// Emit modifier keydown and mark as emitted
 			common.LogDebug("handleTransparentPress: emitting %s keydown (transparent .pressrelease)", combo)
 			EmitModifierKey(virtual, keys.ResolveKeyCode, combo, true)
-			emittedTracker.MarkEmitted(combo)
+			emittedTracker.MarkDown(combo)
 			return
 		}
+	}
+}
+
+// emitUnmatchedModifier forwards a lone modifier's keydown/keyup to the
+// system once its ladder resolves with no winner (no combo matched). This
+// runs on every no-winner exit path — press, release, and timer — so a
+// modifier withheld pending a possible combo is never dropped, regardless
+// of which event finally eliminates the last candidate.
+func emitUnmatchedModifier(combo string, virtual *evdev.InputDevice, emittedTracker *timers.EmittedModifierTracker, pressed bool) {
+	if !isModifierCombo(combo) || virtual == nil {
+		return
+	}
+	common.LogDebug("Emitting unmatched modifier %s to system (pressed=%v)", combo, pressed)
+	EmitModifierKey(virtual, keys.ResolveKeyCode, combo, pressed)
+	if pressed {
+		emittedTracker.MarkDown(combo)
+	} else {
+		emittedTracker.MarkUp(combo)
 	}
 }
 
@@ -387,8 +399,14 @@ func fireWinner(
 	ctx context.Context,
 	state *timers.ComboState,
 	pressed bool,
+	emittedTracker *timers.EmittedModifierTracker,
 ) {
 	s := winner.Shortcut
+
+	// Consume any modifier that is part of this combo and currently
+	// forwarded to the system, so it does not leak into the fired command
+	// (e.g. holding ctrl through "ctrl+up" must not zoom the injected scroll).
+	consumeComboModifiers(virtual, combo, emittedTracker)
 
 	// Build execution context
 	execCtx := executor.ExecContext{
@@ -585,6 +603,29 @@ func intervalOrDefault(interval, def float64) float64 {
 // isModifierCombo checks if a combo is a lone modifier key
 func isModifierCombo(combo string) bool {
 	return combo == "super" || combo == "ctrl" || combo == "alt" || combo == "shift"
+}
+
+// consumeComboModifiers releases, on the virtual keyboard, any modifier
+// prefix of combo that the system currently sees as held (i.e. it was
+// forwarded transparently rather than suppressed). This is what lets a
+// modifier stay transparent right up until a combo actually matches: once
+// it matches, the modifier is consumed so it does not leak into whatever
+// the matched combo does (e.g. injected scroll wheel events).
+func consumeComboModifiers(virtual *evdev.InputDevice, combo string, emittedTracker *timers.EmittedModifierTracker) {
+	parts := strings.Split(combo, "+")
+	if len(parts) < 2 {
+		return
+	}
+	for _, name := range parts[:len(parts)-1] {
+		if !emittedTracker.IsDown(name) {
+			continue
+		}
+		common.LogDebug("Consuming modifier %s (matched combo %s)", name, combo)
+		if virtual != nil {
+			EmitModifierKey(virtual, keys.ResolveKeyCode, name, false)
+		}
+		emittedTracker.MarkUp(name)
+	}
 }
 
 // EmitModifierKey emits a modifier key event to the virtual keyboard

@@ -99,6 +99,9 @@ func main() {
 	case "list", "ls":
 		commands.List()
 		os.Exit(0)
+	case "status":
+		commands.Status()
+		os.Exit(0)
 	case "clear":
 		commands.Clear()
 		os.Exit(0)

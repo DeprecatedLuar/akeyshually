@@ -164,32 +164,38 @@ func (r *StateMapRegistry) CancelAllModifierLadders() {
 	}
 }
 
-// EmittedModifierTracker tracks which modifiers we've emitted to system (so we can release them)
+// EmittedModifierTracker tracks whether the system currently sees a given
+// modifier key as held down — whether that's because it was forwarded
+// transparently on physical press, synthesized by an escape hatch, or
+// re-asserted after being consumed by a matched combo.
 type EmittedModifierTracker struct {
-	mu      sync.Mutex
-	emitted map[string]bool // modifier name -> emitted state
+	mu   sync.Mutex
+	down map[string]bool // modifier name -> system-visible down state
 }
 
 func NewEmittedModifierTracker() *EmittedModifierTracker {
 	return &EmittedModifierTracker{
-		emitted: make(map[string]bool),
+		down: make(map[string]bool),
 	}
 }
 
-func (t *EmittedModifierTracker) MarkEmitted(keyName string) {
+// MarkDown records that the system now sees keyName as pressed.
+func (t *EmittedModifierTracker) MarkDown(keyName string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.emitted[keyName] = true
+	t.down[keyName] = true
 }
 
-func (t *EmittedModifierTracker) WasEmitted(keyName string) bool {
+// IsDown reports whether the system currently sees keyName as pressed.
+func (t *EmittedModifierTracker) IsDown(keyName string) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return t.emitted[keyName]
+	return t.down[keyName]
 }
 
-func (t *EmittedModifierTracker) ClearEmitted(keyName string) {
+// MarkUp records that the system now sees keyName as released.
+func (t *EmittedModifierTracker) MarkUp(keyName string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	delete(t.emitted, keyName)
+	delete(t.down, keyName)
 }
