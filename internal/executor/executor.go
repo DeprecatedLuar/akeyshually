@@ -20,10 +20,12 @@ type ExecContext struct {
 	LoopState *LoopState
 }
 
-func Run(cmd string, ctx ExecContext) {
-	if err := run(cmd, ctx); err != nil {
+func Run(cmd string, ctx ExecContext) error {
+	err := run(cmd, ctx)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "Execution error for %q: %v\n", cmd, err)
 	}
+	return err
 }
 
 func run(cmd string, ctx ExecContext) error {

@@ -212,7 +212,7 @@ func isRemapCommand(cmd string) bool {
 func validateBehaviorRequirements(parsed *ParsedShortcut) error {
 	// Validate remap syntax if detected
 	if len(parsed.Commands) == 1 && isRemapCommand(parsed.Commands[0]) {
-		return validateRemapCommand(parsed.Commands[0])
+		return ValidateRemapToken(parsed.Commands[0])
 	}
 
 	validator, ok := behaviorValidators[parsed.Behavior]
@@ -222,8 +222,8 @@ func validateBehaviorRequirements(parsed *ParsedShortcut) error {
 	return validator(parsed)
 }
 
-// validateRemapCommand validates remap syntax and ensures non-empty, valid targets
-func validateRemapCommand(cmd string) error {
+// ValidateRemapToken validates remap syntax and ensures non-empty, valid targets
+func ValidateRemapToken(cmd string) error {
 	var target string
 
 	switch {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 
 	evdev "github.com/holoplot/go-evdev"
@@ -16,6 +17,7 @@ import (
 	"github.com/deprecatedluar/akeyshually/internal/config"
 	"github.com/deprecatedluar/akeyshually/internal/executor"
 	"github.com/deprecatedluar/akeyshually/internal/handlers"
+	"github.com/deprecatedluar/akeyshually/internal/ipc"
 	"github.com/deprecatedluar/akeyshually/internal/listener"
 	"github.com/deprecatedluar/akeyshually/internal/matcher"
 	"github.com/deprecatedluar/akeyshually/internal/timers"
@@ -57,8 +59,9 @@ func main() {
 	// this; Run only owns single-instance enforcement and signal handling.
 	if len(remaining) == 0 {
 		d := daemon.New(common.AppName)
+		sockPath := d.RuntimePath(".sock")
 		if err := d.Run(func(ctx context.Context) error {
-			return run(ctx, configPath)
+			return run(ctx, configPath, sockPath)
 		}); err != nil {
 			fmt.Fprintf(os.Stderr, "%v\n", err)
 			os.Exit(1)
@@ -118,6 +121,38 @@ func main() {
 			filename = remaining[1]
 		}
 		commands.Config(filename)
+		os.Exit(0)
+	case "emit":
+		if len(remaining) < 2 {
+			fmt.Fprintf(os.Stderr, "Usage: akeyshually emit '<tokens>'\n")
+			os.Exit(1)
+		}
+		commands.Emit(strings.Join(remaining[1:], " "))
+		os.Exit(0)
+	case "tap", "key", "press":
+		if len(remaining) != 2 {
+			fmt.Fprintf(os.Stderr, "Usage: akeyshually tap <keys>\n")
+			os.Exit(1)
+		}
+		commands.Emit(">" + remaining[1])
+		os.Exit(0)
+	case "hold", "keydown":
+		if len(remaining) != 2 {
+			fmt.Fprintf(os.Stderr, "Usage: akeyshually hold <keys>\n")
+			os.Exit(1)
+		}
+		commands.Emit(">>" + remaining[1])
+		os.Exit(0)
+	case "release", "keyup":
+		switch len(remaining) {
+		case 1:
+			commands.Emit("<<")
+		case 2:
+			commands.Emit("<" + remaining[1])
+		default:
+			fmt.Fprintf(os.Stderr, "Usage: akeyshually release [keys]\n")
+			os.Exit(1)
+		}
 		os.Exit(0)
 	case "help", "-h", "--help":
 		commands.Help(remaining[1:]...)
@@ -188,7 +223,7 @@ func newDeviceEventHandler(
 	}
 }
 
-func run(ctx context.Context, configPath string) error {
+func run(ctx context.Context, configPath, sockPath string) error {
 
 	// Only ensure default config exists if not using custom config
 	if configPath == "" {
@@ -294,6 +329,12 @@ func run(ctx context.Context, configPath string) error {
 
 	// Create shared loop state
 	loopState := executor.NewLoopState()
+
+	go func() {
+		if err := ipc.Serve(ctx, sockPath, outputs, loopState); err != nil {
+			fmt.Fprintf(os.Stderr, "IPC server error: %v\n", err)
+		}
+	}()
 
 	var wg sync.WaitGroup
 

@@ -620,7 +620,15 @@ Enable with: `akeyshually enable streaming` (`.toml` extension optional)
 | `config [FILE]` | Edit a config file in `$EDITOR` | `akeyshually config` |
 | `update` | Check for and install updates | `akeyshually update` |
 | `version` | Show version | `akeyshually version` |
+| `emit '<tokens>'` | Inject a remap token sequence | `akeyshually emit '>>shift >a <shift'` |
+| `tap <keys>` | Tap a key/combo | `akeyshually tap capslock` |
+| `hold <keys>` | Hold a key/combo until released | `akeyshually hold shift` |
+| `release [keys]` | Release a key, or all held keys with no args | `akeyshually release` |
 | `--help` | Show help | `akeyshually --help` |
+
+CLI injection commands require the daemon to be running - they route through
+its IPC socket rather than a one-shot device, so held keys (`hold`/`>>`)
+survive between calls.
 
 ---
 

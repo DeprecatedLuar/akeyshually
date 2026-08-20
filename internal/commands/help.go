@@ -18,6 +18,10 @@ var (
 			gohelp.Item("list", "List all config files and their status"),
 			gohelp.Item("status", "Show config files, enabled first"),
 			gohelp.Item("clear", "Disable all overlays"),
+			gohelp.Item("emit '<tokens>'", "Inject a remap token sequence via the running daemon (see 'help remap')"),
+			gohelp.Item("tap <keys>", "Tap a key/combo (alias: key, press)"),
+			gohelp.Item("hold <keys>", "Hold a key/combo until released (alias: keydown)"),
+			gohelp.Item("release [keys]", "Release a key, or all held keys with no args (alias: keyup)"),
 			gohelp.Item("help [topic]", "Show this help message"),
 			gohelp.Item("version", "Show version information"),
 		).
@@ -160,6 +164,13 @@ var (
 			gohelp.Item("Remap key to click", "F1 triggers left click", "\"f1\" = \">lclick\""),
 			gohelp.Item("Key to scroll", "F2/F3 scroll up/down", "\"f2\" = \">scrollup\""),
 			gohelp.Item("Sticky modifier", "Hold shift, release later", "\"f5\" = \">>shift\"\n\"f6\" = \"<<\""),
+		).
+		Section("CLI Injection",
+			gohelp.Item("emit '<tokens>'", "Canonical form, whitespace-separated remap tokens", "akeyshually emit '>>shift >a <shift'"),
+			gohelp.Item("tap <keys>", "Sugar for >keys", "akeyshually tap capslock"),
+			gohelp.Item("hold <keys>", "Sugar for >>keys", "akeyshually hold shift"),
+			gohelp.Item("release [keys]", "Sugar for <keys, or <<  with no args", "akeyshually release shift"),
+			gohelp.Item("Requires daemon", "Routed through the running daemon, not a one-shot device, so held keys survive between calls"),
 		)
 
 	helpKeys = gohelp.NewPage("keys", "complete list of available key names").
