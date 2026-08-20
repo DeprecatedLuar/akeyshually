@@ -59,17 +59,18 @@ const (
 )
 
 type ParsedShortcut struct {
-	KeyCombo     string // "super+k" (without suffix)
-	Behavior     BehaviorMode
-	Timing       TimingMode
-	Repeat       bool     // stacks on any trigger; stop condition follows trigger semantics
-	Interval     float64  // Milliseconds (0 = use default) — tap window for taphold
-	HoldInterval float64  // Milliseconds (0 = use default) — hold threshold for taphold
-	Commands     []string // Single command OR switch array
-	Passthrough  bool     // Ignore modifiers when matching
-	AliasGroup   string   // Canonical key for shared state (e.g. "f1/f2.switch"), empty if not an alias
-	Direction    string   // For axis shortcuts: "+", "-", or "" (both)
-	Sensitivity  float64  // For axis shortcuts: fires per full sweep (0 = use default)
+	KeyCombo        string // "super+k" (without suffix)
+	Behavior        BehaviorMode
+	Timing          TimingMode
+	Repeat          bool     // stacks on any trigger; stop condition follows trigger semantics
+	Interval        float64  // Milliseconds (0 = use default) — tap window for taphold
+	HoldInterval    float64  // Milliseconds (0 = use default) — hold threshold for taphold
+	Commands        []string // Single command OR switch array
+	Passthrough     bool     // Ignore modifiers when matching
+	AliasGroup      string   // Canonical key for shared state (e.g. "f1/f2.switch"), empty if not an alias
+	Direction       string   // For axis shortcuts: "+", "-", or "" (both)
+	Sensitivity     float64  // For axis shortcuts: fires per full sweep (0 = use default)
+	ExplicitOnPress bool     // true if ".onpress" was written explicitly, distinguishes from bare for remap translation
 }
 
 type Config struct {
@@ -82,6 +83,9 @@ type Config struct {
 	ParsedShortcuts map[string][]*ParsedShortcut
 	// EscapeMap tracks which combos have child escape hatches (e.g. "super" -> true if "super+w" exists)
 	EscapeMap map[string]bool
+	// RemapTable maps a combo string (e.g. "capslock", "ctrl+r") to its remap target name,
+	// for shortcuts eligible for input-stage translation rather than ladder resolution.
+	RemapTable map[string]string
 }
 
 // normalizeInterval converts interval values based on heuristic:
@@ -322,6 +326,7 @@ func loadFromFile(configPath string) (*Config, error) {
 
 	// Build escape map
 	cfg.EscapeMap = buildEscapeMap(cfg.ParsedShortcuts)
+	cfg.RemapTable = cfg.buildRemapTable()
 
 	return cfg, nil
 }
@@ -385,6 +390,7 @@ func (c *Config) Merge(overlay *Config) {
 
 	// Rebuild escape map
 	c.EscapeMap = buildEscapeMap(c.ParsedShortcuts)
+	c.RemapTable = c.buildRemapTable()
 }
 
 // loadOverlay loads an overlay config file from the config directory
@@ -669,6 +675,7 @@ func ParseShortcut(key string, value interface{}) (*ParsedShortcut, error) {
 			return nil, fmt.Errorf("onrelease removed: use .pressrelease = [\"\", \"cmd\"]")
 		case "onpress":
 			shortcut.Timing = TimingPress
+			shortcut.ExplicitOnPress = true
 		case "passthrough":
 			shortcut.Passthrough = true
 		default:
@@ -736,6 +743,53 @@ func buildEscapeMap(shortcuts map[string][]*ParsedShortcut) map[string]bool {
 		}
 	}
 	return escapeMap
+}
+
+// scrollAliasTargets are KeyCodeMap entries that resolve to REL codes for scroll/wheel remap
+// output (see keys.KeyCodeMap), not real keys. They must stay on the existing one-shot
+// emitScrollWheel path and never enter RemapTable, which expects EV_KEY targets.
+var scrollAliasTargets = map[string]bool{
+	"scrollup": true, "scrolldown": true, "scrollleft": true, "scrollright": true,
+	"wheelup": true, "wheeldown": true, "wheelleft": true, "wheelright": true,
+}
+
+// buildRemapTable maps each combo eligible for input-stage translation to its remap target name.
+// Eligible: the combo has exactly one shortcut (no competing triggers to race), that shortcut is
+// BehaviorNormal, not explicitly ".onpress", not ".repeat", and its single command resolves (through
+// command_variables) to a plain ">target" remap whose target is a real key.
+func (c *Config) buildRemapTable() map[string]string {
+	remapTable := make(map[string]string)
+	for combo, shortcutList := range c.ParsedShortcuts {
+		if len(shortcutList) != 1 {
+			continue
+		}
+		s := shortcutList[0]
+		if s.Direction != "" {
+			continue
+		}
+		if s.Behavior != BehaviorNormal || s.ExplicitOnPress || s.Repeat {
+			continue
+		}
+		if len(s.Commands) != 1 {
+			continue
+		}
+		resolved := c.ResolveCommand(s.Commands[0])
+		if !strings.HasPrefix(resolved, ">") || strings.HasPrefix(resolved, ">>") {
+			continue
+		}
+		target := resolved[1:]
+		if target == "" {
+			continue
+		}
+		if scrollAliasTargets[strings.ToLower(strings.TrimSpace(target))] {
+			continue
+		}
+		if _, ok := keys.ResolveKeyCode(target); !ok {
+			continue
+		}
+		remapTable[combo] = target
+	}
+	return remapTable
 }
 
 func GetConfigDir() (string, error) {

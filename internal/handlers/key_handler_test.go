@@ -31,7 +31,7 @@ func TestModifierWithConfiguredChildIsForwarded(t *testing.T) {
 	emittedTracker := timers.NewEmittedModifierTracker()
 
 	suppressed := HandlePress(uint16(evdev.KEY_LEFTCTRL), 1, m, cfg,
-		executor.NewLoopState(), executor.Outputs{}, nil, stateMap, emittedTracker)
+		executor.NewLoopState(), executor.Outputs{}, nil, stateMap, emittedTracker, nil)
 	if suppressed {
 		t.Fatal("ctrl press was withheld even though it has no lone shortcut of its own")
 	}
@@ -52,7 +52,7 @@ func TestModifierWithoutConfiguredChildIsForwarded(t *testing.T) {
 
 	suppressed := HandlePress(uint16(evdev.KEY_LEFTCTRL), 1, m, cfg,
 		executor.NewLoopState(), executor.Outputs{}, nil,
-		timers.NewStateMap(), timers.NewEmittedModifierTracker())
+		timers.NewStateMap(), timers.NewEmittedModifierTracker(), nil)
 	if suppressed {
 		t.Fatal("unconfigured ctrl press was unexpectedly suppressed")
 	}
@@ -76,7 +76,7 @@ func TestModifierPressReleaseWithNoComboIsTransparent(t *testing.T) {
 	loopState := executor.NewLoopState()
 
 	if suppressed := HandlePress(uint16(evdev.KEY_LEFTSHIFT), 1, m, cfg,
-		loopState, executor.Outputs{}, nil, stateMap, emittedTracker); suppressed {
+		loopState, executor.Outputs{}, nil, stateMap, emittedTracker, nil); suppressed {
 		t.Fatal("shift press was suppressed despite having no lone shortcut")
 	}
 	if !emittedTracker.IsDown("shift") {
@@ -88,7 +88,7 @@ func TestModifierPressReleaseWithNoComboIsTransparent(t *testing.T) {
 	// reaches the system. What matters is it always happens: never both
 	// suppressed with nothing emitted (the original Krita bug) nor emitted twice.
 	HandleRelease(uint16(evdev.KEY_LEFTSHIFT), 0, m, cfg,
-		loopState, executor.Outputs{}, nil, stateMap, emittedTracker)
+		loopState, executor.Outputs{}, nil, stateMap, emittedTracker, nil)
 	if emittedTracker.IsDown("shift") {
 		t.Fatal("shift should be tracked as up after release")
 	}
@@ -114,7 +114,7 @@ func TestMatchedComboConsumesHeldModifier(t *testing.T) {
 	loopState := executor.NewLoopState()
 
 	// ctrl pressed alone first: forwarded transparently.
-	HandlePress(uint16(evdev.KEY_LEFTCTRL), 1, m, cfg, loopState, executor.Outputs{}, nil, stateMap, emittedTracker)
+	HandlePress(uint16(evdev.KEY_LEFTCTRL), 1, m, cfg, loopState, executor.Outputs{}, nil, stateMap, emittedTracker, nil)
 	if !emittedTracker.IsDown("ctrl") {
 		t.Fatal("ctrl should be marked down after being forwarded")
 	}
@@ -122,7 +122,7 @@ func TestMatchedComboConsumesHeldModifier(t *testing.T) {
 	// 'g' completes ctrl+g: single candidate, no timers, so the ladder fires
 	// immediately — but Run() still executes in its own goroutine, so wait
 	// for it to finish (stateMap entry cleared) before asserting.
-	HandlePress(uint16(evdev.KEY_G), 1, m, cfg, loopState, executor.Outputs{}, nil, stateMap, emittedTracker)
+	HandlePress(uint16(evdev.KEY_G), 1, m, cfg, loopState, executor.Outputs{}, nil, stateMap, emittedTracker, nil)
 	waitForLadderDone(t, stateMap, "ctrl+g")
 
 	if emittedTracker.IsDown("ctrl") {
@@ -163,8 +163,8 @@ func TestNonComboKeyRestoresConsumedModifier(t *testing.T) {
 	emittedTracker := timers.NewEmittedModifierTracker()
 	loopState := executor.NewLoopState()
 
-	HandlePress(uint16(evdev.KEY_LEFTCTRL), 1, m, cfg, loopState, executor.Outputs{}, nil, stateMap, emittedTracker)
-	HandlePress(uint16(evdev.KEY_G), 1, m, cfg, loopState, executor.Outputs{}, nil, stateMap, emittedTracker)
+	HandlePress(uint16(evdev.KEY_LEFTCTRL), 1, m, cfg, loopState, executor.Outputs{}, nil, stateMap, emittedTracker, nil)
+	HandlePress(uint16(evdev.KEY_G), 1, m, cfg, loopState, executor.Outputs{}, nil, stateMap, emittedTracker, nil)
 	waitForLadderDone(t, stateMap, "ctrl+g")
 	if emittedTracker.IsDown("ctrl") {
 		t.Fatal("setup: ctrl should have been consumed by ctrl+g")
@@ -173,7 +173,7 @@ func TestNonComboKeyRestoresConsumedModifier(t *testing.T) {
 	// ctrl+c is not configured, so it should just forward "c" — but ctrl
 	// must be re-asserted first since it's still physically held.
 	if suppressed := HandlePress(uint16(evdev.KEY_C), 1, m, cfg,
-		loopState, executor.Outputs{}, nil, stateMap, emittedTracker); suppressed {
+		loopState, executor.Outputs{}, nil, stateMap, emittedTracker, nil); suppressed {
 		t.Fatal("unconfigured ctrl+c should be forwarded, not suppressed")
 	}
 	if !emittedTracker.IsDown("ctrl") {

@@ -192,6 +192,7 @@ func newDeviceEventHandler(
 	accumulators handlers.AccumulatorMap,
 	prevValues handlers.PrevValuesMap,
 	execCtx executor.ExecContext,
+	translator *handlers.Translator,
 ) listener.EventHandler {
 	return func(event evdev.InputEvent) bool {
 		handlers.ResetAbsStateOnContactEnd(event, accumulators, prevValues)
@@ -213,9 +214,9 @@ func newDeviceEventHandler(
 			}
 			switch event.Value {
 			case keyPressValue:
-				return handlers.HandlePress(code, event.Value, m, cfg, loopState, outputs, virtual, stateMap, emittedTracker)
+				return handlers.HandlePress(code, event.Value, m, cfg, loopState, outputs, virtual, stateMap, emittedTracker, translator)
 			case keyReleaseValue:
-				return handlers.HandleRelease(code, event.Value, m, cfg, loopState, outputs, virtual, stateMap, emittedTracker)
+				return handlers.HandleRelease(code, event.Value, m, cfg, loopState, outputs, virtual, stateMap, emittedTracker, translator)
 			}
 		}
 
@@ -350,6 +351,7 @@ func run(ctx context.Context, configPath, sockPath string) error {
 			stateMap := timers.NewStateMap()
 			registry.Register(stateMap)
 			emittedTracker := timers.NewEmittedModifierTracker()
+			translator := handlers.NewTranslator(p.Virtual)
 
 			// ABS handler state (per device)
 			absInfoMap := handlers.BuildAbsInfoMap(p.Physical)
@@ -365,7 +367,7 @@ func run(ctx context.Context, configPath, sockPath string) error {
 			}
 
 			handler := newDeviceEventHandler(m, cfg, loopState, outputs, p.Virtual, stateMap, emittedTracker,
-				absInfoMap, accumulators, prevValues, execCtx)
+				absInfoMap, accumulators, prevValues, execCtx, translator)
 			if err := listener.ListenWithReconnect(p, handler, listener.FindKeyboards, devName); err != nil {
 				fmt.Fprintf(os.Stderr, "Listener error: %v\n", err)
 			}
@@ -382,6 +384,7 @@ func run(ctx context.Context, configPath, sockPath string) error {
 			stateMap := timers.NewStateMap()
 			registry.Register(stateMap)
 			emittedTracker := timers.NewEmittedModifierTracker()
+			translator := handlers.NewTranslator(p.Virtual)
 
 			// ABS handler state (per device)
 			absInfoMap := handlers.BuildAbsInfoMap(p.Physical)
@@ -397,7 +400,7 @@ func run(ctx context.Context, configPath, sockPath string) error {
 			}
 
 			handler := newDeviceEventHandler(m, cfg, loopState, outputs, p.Virtual, stateMap, emittedTracker,
-				absInfoMap, accumulators, prevValues, execCtx)
+				absInfoMap, accumulators, prevValues, execCtx, translator)
 			if err := listener.ListenWithReconnect(p, handler, func() (listener.DeviceResult, error) {
 				return listener.FindDeclaredDevices(declaredDeviceNames)
 			}, devName); err != nil {

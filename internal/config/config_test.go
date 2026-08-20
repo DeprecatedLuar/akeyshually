@@ -79,6 +79,67 @@ func TestRemapParsing(t *testing.T) {
 	}
 }
 
+func TestBuildRemapTableIncludesEligibleShortcut(t *testing.T) {
+	dst := make(map[string][]*ParsedShortcut)
+	if err := parseShortcutsInto(dst, "capslock", ">super"); err != nil {
+		t.Fatalf("parseShortcutsInto error: %v", err)
+	}
+	cfg := &Config{ParsedShortcuts: dst}
+
+	table := cfg.buildRemapTable()
+	if got, ok := table["capslock"]; !ok || got != "super" {
+		t.Errorf("RemapTable[\"capslock\"] = %q, %v; want \"super\", true", got, ok)
+	}
+}
+
+// Scroll/wheel aliases (e.g. "f5" = ">scrollup") resolve through keys.KeyCodeMap to REL
+// codes, not real keys — they must stay on the existing emitScrollWheel path and never enter
+// RemapTable, which treats every target as an EV_KEY code to translate.
+func TestBuildRemapTableExcludesScrollAliases(t *testing.T) {
+	dst := make(map[string][]*ParsedShortcut)
+	if err := parseShortcutsInto(dst, "f5", ">scrollup"); err != nil {
+		t.Fatalf("parseShortcutsInto error: %v", err)
+	}
+	cfg := &Config{ParsedShortcuts: dst}
+
+	table := cfg.buildRemapTable()
+	if _, ok := table["f5"]; ok {
+		t.Error("scroll alias target should not enter RemapTable")
+	}
+}
+
+// A combo with competing triggers on the same key (e.g. a bare remap racing a doubletap)
+// must not translate at input stage, since translation would bypass the ladder that resolves
+// which trigger actually fires.
+func TestBuildRemapTableExcludesCompetingTriggers(t *testing.T) {
+	dst := make(map[string][]*ParsedShortcut)
+	if err := parseShortcutsInto(dst, "capslock", ">super"); err != nil {
+		t.Fatalf("parseShortcutsInto error: %v", err)
+	}
+	if err := parseShortcutsInto(dst, "capslock.doubletap", "notify-send test"); err != nil {
+		t.Fatalf("parseShortcutsInto error: %v", err)
+	}
+	cfg := &Config{ParsedShortcuts: dst}
+
+	table := cfg.buildRemapTable()
+	if _, ok := table["capslock"]; ok {
+		t.Error("combo with a competing doubletap trigger should not enter RemapTable")
+	}
+}
+
+func TestBuildRemapTableExcludesExplicitOnPress(t *testing.T) {
+	dst := make(map[string][]*ParsedShortcut)
+	if err := parseShortcutsInto(dst, "f2.onpress", ">lclick"); err != nil {
+		t.Fatalf("parseShortcutsInto error: %v", err)
+	}
+	cfg := &Config{ParsedShortcuts: dst}
+
+	table := cfg.buildRemapTable()
+	if _, ok := table["f2"]; ok {
+		t.Error("explicit .onpress should stay on the ladder path, not translate")
+	}
+}
+
 func TestDevicesFieldParses(t *testing.T) {
 	dst := make(map[string][]*ParsedShortcut)
 	err := parseShortcutsInto(dst, "btn_south", "notify-send test")

@@ -68,7 +68,7 @@ func runRemap(cmd string, ctx ExecContext) error {
 		if !ok {
 			return fmt.Errorf("unknown key %q", target)
 		}
-		output := outputForCode(ctx.Outputs, code)
+		output := OutputForCode(ctx.Outputs, code)
 		if err := EmitKeysUp(output, []uint16{code}); err != nil {
 			return err
 		}
@@ -136,7 +136,7 @@ func EmitKeyCombo(outputs Outputs, combo string, heldModifiers matcher.ModifierS
 		}
 	}
 
-	finalOutput := outputForCode(outputs, finalCode)
+	finalOutput := OutputForCode(outputs, finalCode)
 	if finalOutput == outputs.Keyboard {
 		events := make([]evdev.InputEvent, 0, len(modCodes)*2+2)
 		for _, code := range modCodes {
@@ -242,7 +242,7 @@ func outputForTarget(outputs Outputs, target string) (*EventSink, error) {
 		if !ok {
 			return nil, fmt.Errorf("unknown key %q", part)
 		}
-		candidate := outputForCode(outputs, code)
+		candidate := OutputForCode(outputs, code)
 		if output != nil && output != candidate {
 			return nil, fmt.Errorf("cannot mix keyboard and pointer outputs in %q", target)
 		}
@@ -254,7 +254,9 @@ func outputForTarget(outputs Outputs, target string) (*EventSink, error) {
 	return output, nil
 }
 
-func outputForCode(outputs Outputs, code uint16) *EventSink {
+// OutputForCode returns the output device that a translated key code should be written to:
+// the pointer for mouse buttons, the keyboard for everything else.
+func OutputForCode(outputs Outputs, code uint16) *EventSink {
 	if isPointerButton(code) {
 		return outputs.Pointer
 	}

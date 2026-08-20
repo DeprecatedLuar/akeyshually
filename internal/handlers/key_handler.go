@@ -15,7 +15,11 @@ import (
 	evdev "github.com/holoplot/go-evdev"
 )
 
-func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Config, loopState *executor.LoopState, outputs executor.Outputs, virtual *evdev.InputDevice, stateMap *timers.StateMap, emittedTracker *timers.EmittedModifierTracker) bool {
+func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Config, loopState *executor.LoopState, outputs executor.Outputs, virtual *evdev.InputDevice, stateMap *timers.StateMap, emittedTracker *timers.EmittedModifierTracker, translator *Translator) bool {
+	if translator != nil && translator.TryPress(code, m.GetCurrentCombo(code), cfg, m, virtual, outputs, emittedTracker) {
+		return true
+	}
+
 	common.LogKey(keys.GetKeyName(code), code)
 	m.ClearTapCandidate()
 
@@ -179,7 +183,11 @@ func HandlePress(code uint16, value int32, m *matcher.Matcher, cfg *config.Confi
 	return true
 }
 
-func HandleRelease(code uint16, value int32, m *matcher.Matcher, cfg *config.Config, loopState *executor.LoopState, outputs executor.Outputs, virtual *evdev.InputDevice, stateMap *timers.StateMap, emittedTracker *timers.EmittedModifierTracker) bool {
+func HandleRelease(code uint16, value int32, m *matcher.Matcher, cfg *config.Config, loopState *executor.LoopState, outputs executor.Outputs, virtual *evdev.InputDevice, stateMap *timers.StateMap, emittedTracker *timers.EmittedModifierTracker, translator *Translator) bool {
+	if translator != nil && translator.TryRelease(code, m, virtual, emittedTracker) {
+		return true
+	}
+
 	if matcher.IsModifierKey(code) {
 		combo := keys.GetKeyName(code)
 		common.LogDebug("Modifier %s released", combo)
