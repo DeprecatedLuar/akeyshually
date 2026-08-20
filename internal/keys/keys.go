@@ -54,6 +54,12 @@ var KeyCodeMap = map[string]uint16{
 	"stopcd":  evdev.KEY_STOPCD,
 	"ejectcd": evdev.KEY_EJECTCD, "closecd": evdev.KEY_CLOSECD, "ejectclosecd": evdev.KEY_EJECTCLOSECD,
 	"calc": evdev.KEY_CALC, "calculator": evdev.KEY_CALC,
+	"capslock": evdev.KEY_CAPSLOCK, "numlock": evdev.KEY_NUMLOCK, "scrolllock": evdev.KEY_SCROLLLOCK,
+	"minus": evdev.KEY_MINUS, "equal": evdev.KEY_EQUAL,
+	"comma": evdev.KEY_COMMA, "dot": evdev.KEY_DOT, "slash": evdev.KEY_SLASH,
+	"backslash": evdev.KEY_BACKSLASH, "apostrophe": evdev.KEY_APOSTROPHE, "grave": evdev.KEY_GRAVE,
+	"leftbrace": evdev.KEY_LEFTBRACE, "rightbrace": evdev.KEY_RIGHTBRACE,
+	"menu": evdev.KEY_MENU, "pause": evdev.KEY_PAUSE,
 	// Modifier keys
 	"super": evdev.KEY_LEFTMETA, "ctrl": evdev.KEY_LEFTCTRL, "ctl": evdev.KEY_LEFTCTRL,
 	"alt": evdev.KEY_LEFTALT, "shift": evdev.KEY_LEFTSHIFT,

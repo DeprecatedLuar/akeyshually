@@ -308,7 +308,7 @@ devices = ["Huion Tablet", "Xbox Controller"]
 
 **Numbers:** `0-9`
 
-**Special keys:** `return`/`enter`, `space`, `tab`, `esc`/`escape`, `backspace`, `delete`, `insert`, `home`, `end`, `pageup`, `pagedown`, `semicolon`/`;`
+**Special keys:** `return`/`enter`, `space`, `tab`, `esc`/`escape`, `backspace`, `delete`, `insert`, `home`, `end`, `pageup`, `pagedown`, `semicolon`/`;`, `capslock`, `numlock`, `scrolllock`, `minus`, `equal`, `comma`, `dot`, `slash`, `backslash`, `apostrophe`, `grave`, `leftbrace`, `rightbrace`, `menu`, `pause`
 
 **Arrows:** `left`, `right`, `up`, `down`
 

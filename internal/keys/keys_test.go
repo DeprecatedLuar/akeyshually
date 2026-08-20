@@ -53,6 +53,27 @@ func TestBtnKeysInKeyCodeMap(t *testing.T) {
 	}
 }
 
+func TestNewlyAddedKeysInKeyCodeMap(t *testing.T) {
+	keyNames := []string{
+		"capslock", "numlock", "scrolllock",
+		"minus", "equal", "comma", "dot", "slash", "backslash",
+		"apostrophe", "grave", "leftbrace", "rightbrace",
+		"menu", "pause",
+	}
+
+	for _, key := range keyNames {
+		code, ok := ResolveKeyCode(key)
+		if !ok || code == 0 {
+			t.Errorf("key %q not in KeyCodeMap", key)
+			continue
+		}
+		name := GetKeyName(code)
+		if name != key {
+			t.Errorf("GetKeyName(%d) = %q, want canonical name %q", code, name, key)
+		}
+	}
+}
+
 func TestGamepadHomeAliases(t *testing.T) {
 	for _, name := range []string{"btn_mode", "gp_guide", "gp_home"} {
 		code, ok := ResolveKeyCode(name)
