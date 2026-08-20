@@ -91,9 +91,8 @@ func (s *LoopState) StartHeldProcess(combo string, shortcut *config.ParsedShortc
 
 	resolvedCmd := execCtx.Config.ResolveCommand(shortcut.Commands[0])
 
-	// Check if this is a remap command (starts with >>)
-	if strings.HasPrefix(resolvedCmd, ">>") {
-		target := resolvedCmd[2:]
+	// Check if this is a remap command (">>target" or ">target" under a span trigger)
+	if target, ok := remapHoldTarget(resolvedCmd); ok {
 		output, err := outputForTarget(execCtx.Outputs, target)
 		if err != nil {
 			return err

@@ -94,6 +94,30 @@ func TestRunRemapRoutesExistingOutputs(t *testing.T) {
 	}
 }
 
+func TestRunRemapClickUsesSeparateSyncFrames(t *testing.T) {
+	outputs, _, pointer := testOutputs()
+	if err := run(">lclick", ExecContext{Outputs: outputs}); err != nil {
+		t.Fatalf("run(%q): %v", ">lclick", err)
+	}
+
+	events := pointer.snapshot()
+	synCount := 0
+	for _, e := range events {
+		if e.Type == evdev.EV_SYN {
+			synCount++
+		}
+	}
+	if synCount != 2 {
+		t.Fatalf("events = %+v, want 2 SYN_REPORTs (down and up in separate frames), got %d", events, synCount)
+	}
+	if len(events) != 4 {
+		t.Fatalf("events = %+v, want [down, syn, up, syn]", events)
+	}
+	if events[0].Value != 1 || events[1].Type != evdev.EV_SYN || events[2].Value != 0 || events[3].Type != evdev.EV_SYN {
+		t.Fatalf("events = %+v, want down/syn/up/syn ordering", events)
+	}
+}
+
 func TestRunRemapRoutesModifiedClickAcrossOutputs(t *testing.T) {
 	outputs, keyboard, pointer := testOutputs()
 	if err := run(">ctrl+lclick", ExecContext{Outputs: outputs}); err != nil {

@@ -171,10 +171,10 @@ func EmitKeyCombo(outputs Outputs, combo string, heldModifiers matcher.ModifierS
 		}
 	}
 
-	pointerErr := finalOutput.WriteFrame(
-		evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(finalCode), Value: 1},
-		evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(finalCode), Value: 0},
-	)
+	pointerErr := finalOutput.WriteFrame(evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(finalCode), Value: 1})
+	if pointerErr == nil {
+		pointerErr = finalOutput.WriteFrame(evdev.InputEvent{Type: evdev.EV_KEY, Code: evdev.EvCode(finalCode), Value: 0})
+	}
 	if len(pressedModifiers) == 0 {
 		return pointerErr
 	}
@@ -186,6 +186,20 @@ func EmitKeyCombo(outputs Outputs, combo string, heldModifiers matcher.ModifierS
 	}
 	releaseErr := outputs.Keyboard.WriteFrame(modifierUpEvents...)
 	return errors.Join(pointerErr, releaseErr)
+}
+
+// remapHoldTarget returns the key/button target for a sustained hold remap
+// (either ">>target" or plain ">target" used under a span trigger) and
+// whether cmd is such a remap.
+func remapHoldTarget(cmd string) (target string, ok bool) {
+	switch {
+	case strings.HasPrefix(cmd, RemapHoldForever):
+		return cmd[2:], true
+	case strings.HasPrefix(cmd, RemapTap):
+		return cmd[1:], true
+	default:
+		return "", false
+	}
 }
 
 func isModifierHeld(code uint16, held matcher.ModifierState) bool {

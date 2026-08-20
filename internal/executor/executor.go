@@ -33,7 +33,7 @@ func run(cmd string, ctx ExecContext) error {
 	case cmd == "":
 		passthrough(ctx)
 		return nil
-	case isRemap(cmd):
+	case IsRemap(cmd):
 		return runRemap(cmd, ctx)
 	default:
 		runShell(cmd, ctx)
@@ -41,7 +41,8 @@ func run(cmd string, ctx ExecContext) error {
 	}
 }
 
-func isRemap(cmd string) bool {
+// IsRemap reports whether cmd is a key/pointer injection command (>, >>, <, <<).
+func IsRemap(cmd string) bool {
 	return strings.HasPrefix(cmd, ">") || strings.HasPrefix(cmd, "<")
 }
 

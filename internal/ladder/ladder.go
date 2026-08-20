@@ -455,7 +455,7 @@ func fireWinner(
 			executor.Run(resolvedCmd, execCtx)
 		}
 
-	case config.BehaviorHold, config.BehaviorLongPress:
+	case config.BehaviorHold:
 		common.LogMatch(combo+".hold", combo)
 		resolvedCmd := cfg.ResolveCommand(s.Commands[0])
 		if s.Repeat {
@@ -465,8 +465,8 @@ func fireWinner(
 			case <-state.ReleaseCh:
 			}
 			loopState.StopLoop(combo)
-		} else if strings.HasPrefix(resolvedCmd, ">>") {
-			// Remap hold forever - needs special lifecycle management
+		} else if executor.IsRemap(resolvedCmd) {
+			// Remap - sustain the target for the span of the hold (>> or single >)
 			if err := loopState.StartHeldProcess(combo, s, execCtx); err != nil {
 				fmt.Fprintf(os.Stderr, "Failed to start held remap for %s: %v\n", combo, err)
 				return
@@ -481,25 +481,42 @@ func fireWinner(
 		} else {
 			common.LogTrigger(resolvedCmd)
 			executor.Run(resolvedCmd, execCtx)
-			// For longpress, exit immediately
-			if s.Behavior != config.BehaviorLongPress {
-				select {
-				case <-ctx.Done():
-				case <-state.ReleaseCh:
-				}
+			select {
+			case <-ctx.Done():
+			case <-state.ReleaseCh:
 			}
 		}
 
+	case config.BehaviorLongPress:
+		// One-shot by definition - fires once at threshold and exits immediately,
+		// regardless of command type.
+		common.LogMatch(combo+".hold", combo)
+		resolvedCmd := cfg.ResolveCommand(s.Commands[0])
+		common.LogTrigger(resolvedCmd)
+		executor.Run(resolvedCmd, execCtx)
+
 	case config.BehaviorHoldRelease:
 		common.LogMatch(combo+".holdrelease", combo)
-		if s.Commands[0] != "" {
-			resolvedCmd := cfg.ResolveCommand(s.Commands[0])
-			common.LogTrigger(resolvedCmd)
-			executor.Run(resolvedCmd, execCtx)
+		holdCmd := cfg.ResolveCommand(s.Commands[0])
+		sustaining := s.Commands[0] != "" && executor.IsRemap(holdCmd)
+		if sustaining {
+			// Remap - sustain the target for the span of the hold (>> or single >)
+			if err := loopState.StartHeldProcess(combo, s, execCtx); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to start held remap for %s: %v\n", combo, err)
+				sustaining = false
+			}
+		} else if s.Commands[0] != "" {
+			common.LogTrigger(holdCmd)
+			executor.Run(holdCmd, execCtx)
 		}
 		select {
 		case <-ctx.Done():
 		case <-state.ReleaseCh:
+		}
+		if sustaining {
+			if err := loopState.StopHeldProcess(combo); err != nil {
+				fmt.Fprintf(os.Stderr, "Failed to stop held remap for %s: %v\n", combo, err)
+			}
 		}
 		if s.Commands[1] != "" {
 			resolvedCmd := cfg.ResolveCommand(s.Commands[1])
